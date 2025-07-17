@@ -38,10 +38,24 @@ export default function AlertThresholdConfig() {
                 <input
                   type="number"
                   value={flowThreshold}
-                  onChange={e => setFlowThreshold(Number(e.target.value))}
+                  min="0"
+                  step="1"
+                  onChange={e => {
+                    const value = e.target.value;
+                    setFlowThreshold(value === '' ? 0 : Number(value));
+                  }}
+                  onKeyDown={e => {
+                    // 允許數字、退格、刪除、箭頭鍵、Tab鍵
+                    if (![8, 9, 46, 37, 38, 39, 40].includes(e.keyCode) && 
+                        (e.keyCode < 48 || e.keyCode > 57) && 
+                        (e.keyCode < 96 || e.keyCode > 105)) {
+                      e.preventDefault();
+                    }
+                  }}
                   style={{
-                    width: 60, margin: "0 8px", borderRadius: 5,
-                    background: "#181a28", color: "#fff", border: "1px solid #49cfff"
+                    width: 80, margin: "0 8px", borderRadius: 5,
+                    background: "#181a28", color: "#fff", border: "1px solid #49cfff",
+                    padding: "6px 8px", fontSize: "14px", outline: "none"
                   }}
                 />
                 <span>Mbps，並持續 10 分鐘</span>
@@ -56,10 +70,24 @@ export default function AlertThresholdConfig() {
                 <input
                   type="number"
                   value={ipThreshold}
-                  onChange={e => setIPThreshold(Number(e.target.value))}
+                  min="0"
+                  step="1"
+                  onChange={e => {
+                    const value = e.target.value;
+                    setIPThreshold(value === '' ? 0 : Number(value));
+                  }}
+                  onKeyDown={e => {
+                    // 允許數字、退格、刪除、箭頭鍵、Tab鍵
+                    if (![8, 9, 46, 37, 38, 39, 40].includes(e.keyCode) && 
+                        (e.keyCode < 48 || e.keyCode > 57) && 
+                        (e.keyCode < 96 || e.keyCode > 105)) {
+                      e.preventDefault();
+                    }
+                  }}
                   style={{
-                    width: 60, margin: "0 8px", borderRadius: 5,
-                    background: "#181a28", color: "#fff", border: "1px solid #49cfff"
+                    width: 80, margin: "0 8px", borderRadius: 5,
+                    background: "#181a28", color: "#fff", border: "1px solid #49cfff",
+                    padding: "6px 8px", fontSize: "14px", outline: "none"
                   }}
                 />
                 <span>次，觸發告警</span>
@@ -74,10 +102,24 @@ export default function AlertThresholdConfig() {
                 <input
                   type="number"
                   value={errThreshold}
-                  onChange={e => setErrThreshold(Number(e.target.value))}
+                  min="0"
+                  step="1"
+                  onChange={e => {
+                    const value = e.target.value;
+                    setErrThreshold(value === '' ? 0 : Number(value));
+                  }}
+                  onKeyDown={e => {
+                    // 允許數字、退格、刪除、箭頭鍵、Tab鍵
+                    if (![8, 9, 46, 37, 38, 39, 40].includes(e.keyCode) && 
+                        (e.keyCode < 48 || e.keyCode > 57) && 
+                        (e.keyCode < 96 || e.keyCode > 105)) {
+                      e.preventDefault();
+                    }
+                  }}
                   style={{
-                    width: 60, margin: "0 8px", borderRadius: 5,
-                    background: "#181a28", color: "#fff", border: "1px solid #49cfff"
+                    width: 80, margin: "0 8px", borderRadius: 5,
+                    background: "#181a28", color: "#fff", border: "1px solid #49cfff",
+                    padding: "6px 8px", fontSize: "14px", outline: "none"
                   }}
                 />
                 <span>次，觸發告警</span>

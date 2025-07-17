@@ -11,7 +11,12 @@ export default function DDoSGraph() {
 
   useEffect(() => {
     fetch("http://localhost:8080/api/attack")
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) {
+          throw new Error(`HTTP error! status: ${res.status}`);
+        }
+        return res.json();
+      })
       .then(a => {
         setAttackData(a);
         const nodes = [
@@ -33,6 +38,10 @@ export default function DDoSGraph() {
           edges.push({ from: nid, to: 2, label: "attack" });
         });
         setGraphData({ nodes, edges });
+      })
+      .catch(error => {
+        console.error('載入攻擊資料失敗:', error);
+        setAnalysisError(`無法載入攻擊資料: ${error.message}`);
       });
   }, []);
 
