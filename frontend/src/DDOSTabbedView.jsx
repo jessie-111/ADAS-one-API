@@ -2,11 +2,13 @@ import React, { useState } from "react";
 import DDoSGraph from "./DDoSGraph";
 import TrafficTrend from "./TrafficTrend";
 import AlertThresholdConfig from "./AlertThresholdConfig";
+import AISettingsConfig from "./AISettingsConfig";
 
 const tabs = [
   { label: "關聯圖", component: DDoSGraph },
   { label: "流量趨勢", component: TrafficTrend },
-  { label: "告警閾值設定", component: AlertThresholdConfig }
+  { label: "告警閾值設定", component: AlertThresholdConfig },
+  { label: "AI 助手設定", component: AISettingsConfig }
 ];
 
 export default function DDOSTabbedView() {
