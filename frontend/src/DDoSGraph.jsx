@@ -10,34 +10,84 @@ export default function DDoSGraph() {
   const [analysisError, setAnalysisError] = useState(null);
 
   useEffect(() => {
-    fetch("http://localhost:8080/api/attack")
+    // 從localStorage獲取設定
+    const apiKey = localStorage.getItem('gemini_api_key');
+    const model = localStorage.getItem('gemini_model');
+    const dataSource = localStorage.getItem('data_source') || 'file';
+    const timeRange = localStorage.getItem('elk_time_range') || '1h';
+
+    // 根據資料來源選擇對應的 API 端點
+    const endpoint = dataSource === 'elk' ? 
+      "http://localhost:8080/api/analyze-elk-log" : 
+      "http://localhost:8080/api/analyze-log";
+
+    // 呼叫日誌分析端點
+    fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        apiKey,
+        model,
+        dataSource,
+        timeRange
+      })
+    })
       .then(res => {
         if (!res.ok) {
           throw new Error(`HTTP error! status: ${res.status}`);
         }
         return res.json();
       })
-      .then(a => {
-        setAttackData(a);
-        const nodes = [
-          { id: 1, label: `Domain:\n${a.attackDomain}`, color: "#49cfff" },
-          { id: 2, label: `Target IP:\n${a.targetIP}`, color: "#36a2c0" },
-          { id: 3, label: `Attack URL:\n${a.targetURL.split('/').pop()}`, color: "#5bf1a1" }
-        ];
-        const edges = [
-          { from: 1, to: 2, label: "resolves to" },
-          { from: 2, to: 3, label: "target", dashes: true }
-        ];
-        a.sourceList.forEach((src, i) => {
-          const nid = 4 + i;
-          nodes.push({
-            id: nid,
-            label: `${src.ip}\n[${src.country}]\n${src.asn}`,
-            color: ["#ff5858", "#ffb948", "#b18bfc"][i % 3]
+      .then(result => {
+        // 從分析結果中提取攻擊資料
+        if (result.attackData) {
+          const a = result.attackData;
+          setAttackData(a);
+          
+          // 建立圖形節點和邊
+          const nodes = [
+            { id: 1, label: `Domain:\n${a.attackDomain}`, color: "#49cfff" },
+            { id: 2, label: `Target IP:\n${a.targetIP}`, color: "#36a2c0" },
+            { id: 3, label: `Attack URL:\n${a.targetURL.split('/').pop()}`, color: "#5bf1a1" }
+          ];
+          const edges = [
+            { from: 1, to: 2, label: "resolves to" },
+            { from: 2, to: 3, label: "target", dashes: true }
+          ];
+          
+          a.sourceList.forEach((src, i) => {
+            const nid = 4 + i;
+            nodes.push({
+              id: nid,
+              label: `${src.ip}\n[${src.country}]\n${src.asn}`,
+              color: ["#ff5858", "#ffb948", "#b18bfc"][i % 3]
+            });
+            edges.push({ from: nid, to: 2, label: "attack" });
           });
-          edges.push({ from: nid, to: 2, label: "attack" });
-        });
-        setGraphData({ nodes, edges });
+          
+          setGraphData({ nodes, edges });
+        } else {
+          // 沒有攻擊資料時，顯示健康狀態的圖形
+          const nodes = [
+            { id: 1, label: "網站流量\n健康狀態", color: "#5bf1a1" },
+            { id: 2, label: "無攻擊偵測", color: "#36a2c0" }
+          ];
+          const edges = [
+            { from: 1, to: 2, label: "安全", color: "#5bf1a1" }
+          ];
+          setGraphData({ nodes, edges });
+        }
+        
+        // 設定AI分析結果
+        if (result.summary && result.recommendations) {
+          setAiAnalysis({
+            summary: result.summary,
+            recommendations: result.recommendations,
+            metadata: result.metadata
+          });
+        }
       })
       .catch(error => {
         console.error('載入攻擊資料失敗:', error);
@@ -45,50 +95,7 @@ export default function DDoSGraph() {
       });
   }, []);
 
-  // AI 分析 useEffect
-  useEffect(() => {
-    if (!attackData) return;
-
-    const performAIAnalysis = async () => {
-      const apiKey = localStorage.getItem('gemini_api_key');
-      const model = localStorage.getItem('gemini_model');
-
-      setIsAnalyzing(true);
-      setAnalysisError(null);
-
-      try {
-        const response = await fetch('http://localhost:8080/api/analyze', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            apiKey,
-            model,
-            attackData
-          })
-        });
-
-        if (response.ok) {
-          const analysis = await response.json();
-          setAiAnalysis(analysis);
-        } else {
-          const error = await response.json();
-          if (error.error === '缺少必要參數') {
-            setAnalysisError('請先到 AI 助手設定頁面配置 API Key 和模型');
-          } else {
-            setAnalysisError(`AI 分析失敗: ${error.error}`);
-          }
-        }
-      } catch (error) {
-        setAnalysisError(`AI 分析失敗: ${error.message}`);
-      } finally {
-        setIsAnalyzing(false);
-      }
-    };
-
-    performAIAnalysis();
-  }, [attackData]);
+  // 移除原本的AI分析useEffect，因為現在直接從analyze-log端點獲取
 
   useEffect(() => {
     if (ref.current && graphData) {
@@ -219,7 +226,7 @@ export default function DDoSGraph() {
           </>
         ) : (
           <div style={{ color: '#b5b8c6' }}>
-            <strong>等待 AI 分析...</strong>
+            <strong>等待載入攻擊資料...</strong>
           </div>
         )}
       </div>

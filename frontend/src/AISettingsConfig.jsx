@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 
-export default function AISettingsConfig() {
+export default function AISettingsConfig({ onConfigChange }) {
   const [apiKey, setApiKey] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
   const [models, setModels] = useState([]);
@@ -15,17 +15,38 @@ export default function AISettingsConfig() {
     if (savedModel) setSelectedModel(savedModel);
   }, []);
 
+  // 當配置改變時，通知父元件
+  useEffect(() => {
+    if (onConfigChange) {
+      onConfigChange({
+        apiKey,
+        model: selectedModel
+      });
+    }
+  }, [apiKey, selectedModel, onConfigChange]);
+
   // 載入可用模型
   useEffect(() => {
-    fetch('http://localhost:8080/api/models')
-      .then(res => res.json())
-      .then(data => {
-        setModels(data);
-        if (data.length > 0 && !selectedModel) {
-          setSelectedModel(data[0].id);
+    const loadModels = async () => {
+      try {
+        const response = await fetch('http://localhost:8080/api/models');
+        if (response.ok) {
+          const data = await response.json();
+          setModels(data);
+          if (data.length > 0 && !selectedModel) {
+            setSelectedModel(data[0].id);
+          }
+        } else {
+          console.error('載入模型失敗: HTTP', response.status);
+          setTestStatus('❌ 無法載入模型列表，請檢查後端服務');
         }
-      })
-      .catch(error => console.error('載入模型失敗:', error));
+      } catch (error) {
+        console.error('載入模型失敗:', error);
+        setTestStatus('❌ 連接後端失敗，請確認服務是否運行');
+      }
+    };
+    
+    loadModels();
   }, [selectedModel]);
 
   // 保存設定
@@ -56,29 +77,38 @@ export default function AISettingsConfig() {
         sourceList: [
           { ip: "192.168.1.10", country: "US", asn: "AS15169" },
           { ip: "192.168.1.11", country: "CN", asn: "AS4134" }
-        ]
+        ],
+        // 添加必要的統計資料
+        totalRequests: 1000,
+        totalBytes: 5000000,
+        uniqueIPs: 50,
+        attackPatterns: {},
+        securityEvents: []
       };
 
-      const response = await fetch('http://localhost:8080/api/analyze', {
+      const response = await fetch('http://localhost:8080/api/test-ai', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           apiKey,
-          model: selectedModel,
-          attackData: testData
+          model: selectedModel
         })
       });
 
       if (response.ok) {
         const result = await response.json();
-        setTestStatus('✅ 連接成功！AI 分析功能正常');
-        // 自動保存成功的設定
-        handleSave();
+        if (result.success) {
+          setTestStatus(`✅ 連接成功！${result.message}`);
+          // 自動保存成功的設定
+          handleSave();
+        } else {
+          setTestStatus(`❌ 測試失敗: ${result.error}`);
+        }
       } else {
         const error = await response.json();
-        setTestStatus(`❌ 連接失敗: ${error.error}`);
+        setTestStatus(`❌ 連接失敗: ${error.error || error.details || '未知錯誤'}`);
       }
     } catch (error) {
       setTestStatus(`❌ 連接失敗: ${error.message}`);
