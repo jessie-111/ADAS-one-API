@@ -56,7 +56,7 @@ async function testAIAnalysis() {
 
 console.log('⚙️ 使用設定：');
 console.log('- API Key:', config.GEMINI_API_KEY ? '已設定' : '未設定');
-console.log('- 模型:', config.GEMINI_MODEL || 'gemini-1.5-flash');
+console.log('- 模型:', config.GEMINI_MODEL || 'gemini-2.5-flash');
 console.log('');
 
 testAIAnalysis(); 
