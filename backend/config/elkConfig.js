@@ -34,8 +34,6 @@ const ELK_CONFIG = {
   // Elasticsearch 連接配置
   elasticsearch: {
     host: process.env.ELK_HOST || 'https://10.168.10.250:9200',
-    username: process.env.ELK_USERNAME || 'elastic',
-    password: process.env.ELK_PASSWORD || '', // 需要手動設定
     index: process.env.ELK_INDEX || 'adasone-cf-logpush-*',
     apiKey: process.env.ELK_API_KEY || 'Z3h5NE1KZ0JXTG9ZV1JjU3pleTA6b2Nfd1FEWjZfUTZmYVZHaW1kRzB6dw==',
     maxResults: parseInt(process.env.ELK_MAX_RESULTS) || 10000
