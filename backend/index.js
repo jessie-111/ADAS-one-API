@@ -888,11 +888,14 @@ ${attackData.owaspFindings ? formatOWASPFindings(attackData.owaspFindings) : '�
    
 2. 針對性防護建議 (recommendations)：基於發現的具體攻擊模式，提供 5-6 個精確的安全防護建議，每個建議應直接對應發現的威脅。
 
-請以繁體中文回答，格式為 JSON：
+**重要：請務必嚴格按照以下JSON格式回答，不要添加任何其他文字或說明：**
+
 {
   "summary": "您的專業深度安全分析",
-  "recommendations": [ "建議1", "建議2", "..." ]
-}`;
+  "recommendations": [ "建議1", "建議2", "建議3", "建議4", "建議5" ]
+}
+
+**注意：請直接回應JSON，不要有"好的"、"作為專家"等開頭語句**`;
   } else if (healthData) {
     console.log('分析類型: 網站健康度');
     prompt = `
@@ -910,11 +913,14 @@ ${attackData.owaspFindings ? formatOWASPFindings(attackData.owaspFindings) : '�
 1. 總結報告 (summary)：根據以上數據，評估這段時間的整體網站是否健康。分析來源分佈、請求模式等是否有任何潛在的異常或值得關注的跡象（例如，來自特定國家的請求是否過於集中？某個IP的請求量是否不成比例地高？）。即使沒有偵測到明確攻擊，也請從專業角度提供您的見解。
 2. 安全建議 (recommendations)：提供 4-5 個通用的、預防性的安全加固建議，以維持網站的健康和安全。
 
-請以繁體中文回答，格式為 JSON：
+**重要：請務必嚴格按照以下JSON格式回答，不要添加任何其他文字或說明：**
+
 {
   "summary": "您的專業分析報告",
-  "recommendations": [ "建議1", "建議2", "..." ]
-}`;
+  "recommendations": [ "建議1", "建議2", "建議3", "建議4", "建議5" ]
+}
+
+**注意：請直接回應JSON，不要有"好的"、"作為專家"等開頭語句**`;
   }
 
   // 添加重試機制處理 503 錯誤
@@ -945,11 +951,58 @@ ${attackData.owaspFindings ? formatOWASPFindings(attackData.owaspFindings) : '�
   const response = await result.response;
   let text = response.text().replace(/```json\s*|```\s*/g, '').trim();
   
+  // 嘗試從非JSON回應中提取JSON部分
+  if (!text.startsWith('{') && text.includes('{')) {
+    const jsonStart = text.indexOf('{');
+    text = text.substring(jsonStart);
+  }
+  
   try {
     const analysis = JSON.parse(text);
-    if (analysis.recommendations && Array.isArray(analysis.recommendations)) {
-      analysis.recommendations = analysis.recommendations.map(rec => rec.replace(/^\*\*|\*\*$/g, '').replace(/^["']|["']$/g, '').replace(/^•\s*/, '').trim());
+    
+    // 確保必要的屬性存在且格式正確
+    if (!analysis.summary) {
+      analysis.summary = "AI 分析完成，但摘要格式異常";
+    } else if (typeof analysis.summary === 'object') {
+      // 如果 summary 是物件，將其轉換為可讀的字串
+      if (analysis.summary !== null) {
+        const summaryParts = [];
+        for (const [key, value] of Object.entries(analysis.summary)) {
+          const formattedKey = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+          summaryParts.push(`**${formattedKey}**: ${String(value)}`);
+        }
+        analysis.summary = summaryParts.join('\n\n');
+      } else {
+        analysis.summary = "AI 分析完成，但摘要格式異常";
+      }
     }
+    
+    if (!analysis.recommendations) {
+      analysis.recommendations = ["請檢查系統安全設定"];
+    } else if (!Array.isArray(analysis.recommendations)) {
+      // 如果 recommendations 不是陣列，轉換為陣列
+      analysis.recommendations = [String(analysis.recommendations)];
+    }
+    
+    // 安全地處理 recommendations 陣列
+    if (analysis.recommendations && Array.isArray(analysis.recommendations)) {
+      analysis.recommendations = analysis.recommendations.map(rec => {
+        // 確保每個建議都是字串類型
+        if (typeof rec === 'string') {
+          return rec.replace(/^\*\*|\*\*$/g, '').replace(/^["']|["']$/g, '').replace(/^•\s*/, '').trim();
+        } else if (typeof rec === 'object' && rec !== null) {
+          // 如果是物件，嘗試轉換為字串
+          return JSON.stringify(rec);
+        } else {
+          // 其他類型轉為字串
+          return String(rec || '').trim();
+        }
+      }).filter(rec => rec.length > 0); // 過濾空字串
+    } else {
+      // 如果recommendations不是陣列，轉換為陣列
+      analysis.recommendations = [String(analysis.recommendations || "請檢查系統安全設定")];
+    }
+    
     analysis.metadata = {
       analysisId: analysisId,
       timestamp: currentTime,
@@ -960,8 +1013,60 @@ ${attackData.owaspFindings ? formatOWASPFindings(attackData.owaspFindings) : '�
     return analysis;
   } catch (parseError) {
     console.error('JSON 解析錯誤:', parseError);
-    // 返回簡化的錯誤對象或原始文本
-    return { summary: "AI 回應格式錯誤", recommendations: [text] };
+    console.log('原始回應內容 (前200字元):', text.substring(0, 200));
+    
+    // 嘗試從自然語言回應中提取有用信息
+    let summary = text;
+    let recommendations = [];
+    
+    // 如果回應太長，截取前500字元作為摘要
+    if (summary.length > 500) {
+      summary = summary.substring(0, 500) + '...';
+    }
+    
+    // 嘗試提取建議（尋找列表格式的文字）
+    const suggestionPatterns = ['建議', '建議', '應該', '需要', '可以', '推薦'];
+    const lines = text.split('\n');
+    
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      if (trimmedLine.length > 0) {
+        // 檢查是否包含建議關鍵字
+        for (const pattern of suggestionPatterns) {
+          if (trimmedLine.includes(pattern) && trimmedLine.length > 10) {
+            recommendations.push(trimmedLine);
+            break;
+          }
+        }
+        // 檢查是否是列表項目
+        if ((trimmedLine.startsWith('-') || trimmedLine.startsWith('•') || trimmedLine.startsWith('*')) && trimmedLine.length > 5) {
+          recommendations.push(trimmedLine.replace(/^[-•*]\s*/, ''));
+        }
+      }
+    }
+    
+    // 如果沒有找到建議，使用預設建議
+    if (recommendations.length === 0) {
+      recommendations = [
+        '檢查防火牆設定是否適當',
+        '監控異常流量模式',
+        '定期更新安全規則',
+        '加強訪問控制機制'
+      ];
+    }
+    
+    return {
+      summary: summary,
+      recommendations: recommendations.slice(0, 10), // 最多10個建議
+      metadata: {
+        analysisId: analysisId,
+        timestamp: currentTime,
+        model: useModel,
+        isAIGenerated: true,
+        parseError: true,
+        originalResponse: text.substring(0, 100) // 保留原始回應的前100字元供調試
+      }
+    };
   }
 }
 

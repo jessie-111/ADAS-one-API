@@ -404,19 +404,50 @@ export default function DDoSGraph() {
               borderRadius: 4,
               lineHeight: 1.5
             }}>
-              {aiAnalysis.summary}
+              {typeof aiAnalysis.summary === 'string' ? aiAnalysis.summary : (
+                typeof aiAnalysis.summary === 'object' && aiAnalysis.summary !== null ? (
+                  <div>
+                    {Object.entries(aiAnalysis.summary).map(([key, value]) => (
+                      <div key={key} style={{ marginBottom: '8px' }}>
+                        <strong style={{ color: '#49cfff' }}>
+                          {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}:
+                        </strong>
+                        <div style={{ marginLeft: '10px', marginTop: '4px' }}>
+                          {typeof value === 'string' ? value : JSON.stringify(value)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  String(aiAnalysis.summary || '分析結果格式異常')
+                )
+              )}
             </div>
             <strong>🛡️ AI 防禦建議：</strong>
             <ul style={{ margin: '8px 0', paddingLeft: '20px' }}>
-              {aiAnalysis.recommendations.map((rec, index) => (
+              {Array.isArray(aiAnalysis.recommendations) ? aiAnalysis.recommendations.map((rec, index) => (
                 <li key={index} style={{ 
                   marginBottom: '8px',
                   lineHeight: '1.4',
                   listStyleType: 'disc'
                 }}>
-                  {rec.replace(/^[•\-\*]\s*/, '').trim()}
+                  {typeof rec === 'string' ? rec.replace(/^[•\-\*]\s*/, '').trim() : (
+                    typeof rec === 'object' && rec !== null ? (
+                      <div>
+                        {Object.entries(rec).map(([key, value]) => (
+                          <div key={key}>
+                            <strong>{key.replace(/_/g, ' ')}:</strong> {String(value)}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      String(rec || '建議格式異常')
+                    )
+                  )}
                 </li>
-              ))}
+              )) : (
+                <li style={{ color: '#ff5858' }}>建議列表格式異常</li>
+              )}
             </ul>
             
             {/* 顯示攻擊關聯圖統計資訊 */}

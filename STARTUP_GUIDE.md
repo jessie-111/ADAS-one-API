@@ -240,219 +240,29 @@ netstat -an | grep :8080  # 後端
 #### 1.1 部署 Elasticsearch MCP Server
 ```bash
 # 使用 Docker 部署 MCP Server
-docker run -d \
-  --name mcp-server-elasticsearch \
-  -p 8080:8080 \
-  -e ES_URL=https://your-elasticsearch:9200 \
-  -e ES_API_KEY=your_api_key \
-  -e ES_SSL_SKIP_VERIFY=true \
-  docker.elastic.co/mcp/elasticsearch http
+docker run --rm  -d -e ES_URL=https://your-elasticsearch:9200   -e ES_API_KEY=your-elasticsearch1_api_key   -e ES_SSL_SKIP_VERIFY=true   -p 8080:8080   docker.elastic.co/mcp/elasticsearch http
 ```
 
 #### 1.2 更新系統配置
 ```bash
-# 編輯 backend/.env
-ELK_MCP_SERVER_URL=http://localhost:8080
-ELK_MCP_PROTOCOL=http
-ELK_HOST=https://your-elasticsearch:9200
-ELK_API_KEY=your_api_key
-ELK_INDEX=your-log-index-*
+# 編輯 backend/config/elkConfig.js
+修改 // HTTP MCP Server URL（您的 MCP 服務位址）
+    serverUrl: process.env.ELK_MCP_SERVER_URL || 'http://your-elasticsearch:8080',
+修改 // mcp-proxy 模式配置（推薦）
+      '--transport=streamablehttp',
+      `http://your-elasticsearch:8080/mcp`
+修改 // Elasticsearch 連接配置
+    host: process.env.ELK_HOST || 'https://your-elasticsearch:9200',
+
+修改 //ELK Table
+    index: process.env.ELK_INDEX || 'your-elasticsearch_table_name',
+新增 //elk api key
+    apiKey: process.env.ELK_API_KEY || 'your-elasticsearch1_api_key',
 ```
-安裝mcp proxy 
+程式Server 安裝 mcp proxy 
 uv tool install mcp-proxy
 
-#### 1.3 測試 ELK 連接
-```bash
-cd backend
-node test-mcp-connection.js
-```
-
-### 情況 2: 使用檔案模式（備用方案）
-
-如果暫時無法配置 ELK 環境，可以使用檔案上傳模式作為備用方案：
-1. 準備 Cloudflare 或其他 Web 服務器日誌檔案
-2. 透過前端介面上傳日誌檔案
-3. 系統會自動進行 AI 分析和 OWASP 分類
-
 ---
-
-## 🐛 故障排除
-
-### 問題 1: "Failed to fetch" 錯誤
-
-**症狀**: 前端無法連接後端 API
-
-**解決方案**:
-```bash
-# 1. 檢查後端服務是否運行
-ps aux | grep "node index.js"
-
-# 2. 檢查端口是否被占用
-lsof -i :8080
-
-# 3. 重新啟動後端服務
-cd backend
-node index.js
-```
-
-### 問題 2: AI 分析失敗
-
-**症狀**: 系統顯示 AI API 錯誤
-
-**解決方案**:
-```bash
-# 1. 檢查 API Key 設定
-grep GEMINI_API_KEY backend/.env
-
-# 2. 測試 API 連接
-cd backend
-node test-ai.js
-
-# 3. 檢查 API 配額和權限
-# 前往 Google AI Studio 檢查使用狀況
-```
-
-### 問題 3: ELK 連接失敗
-
-**症狀**: ELK MCP Server 連接錯誤
-
-**解決方案**:
-```bash
-# 1. 檢查 MCP Server 狀態
-docker ps | grep mcp-server-elasticsearch
-
-# 2. 檢查 Elasticsearch 連接
-curl -k https://your-elasticsearch:9200/_cluster/health
-
-# 3. 重新啟動 MCP Server
-docker restart mcp-server-elasticsearch
-```
-
-### 問題 4: 端口衝突
-
-**症狀**: 端口被占用錯誤
-
-**解決方案**:
-```bash
-# 查找占用進程
-lsof -i :3000  # 前端端口
-lsof -i :8080  # 後端端口
-
-# 結束占用進程
-kill -9 <PID>
-
-# 或更改端口配置
-PORT=8081 node index.js  # 後端
-REACT_APP_PORT=3001 npm start  # 前端
-```
-
-### 問題 5: 記憶體不足
-
-**症狀**: 服務運行緩慢或崩潰
-
-**解決方案**:
-```bash
-# 檢查記憶體使用
-free -h
-ps aux --sort=-%mem | head
-
-# 增加 Node.js 記憶體限制
-node --max-old-space-size=4096 index.js
-
-# 調整 ELK 查詢參數
-ELK_MAX_RESULTS=5000  # 減少查詢結果數量
-```
-
----
-
-## 📊 效能最佳化
-
-### 1. 後端最佳化
-```bash
-# 啟用 Node.js 叢集模式
-# 編輯 backend/index.js 添加叢集支援
-
-# 調整記憶體配置
-node --max-old-space-size=4096 index.js
-```
-
-### 2. 前端最佳化
-```bash
-# 建置最佳化版本
-cd frontend
-npm run build
-
-# 啟用壓縮
-# 在 Web 服務器配置 gzip 壓縮
-```
-
-### 3. 資料庫最佳化
-```bash
-# 調整 ELK 查詢參數
-ELK_TIME_RANGE=30m    # 減少查詢時間範圍
-ELK_MAX_RESULTS=1000  # 限制結果數量
-```
-
----
-
-## 📞 技術支援
-
-### 日誌檔案位置
-- 後端日誌: `backend.log`
-- 前端日誌: `frontend.log`
-- 系統日誌: `/var/log/syslog`
-
-### 有用的測試指令
-```bash
-# 檢查所有服務狀態
-cd backend
-node test-full-analysis.js
-
-# 檢查配置
-node -e "console.log(require('./config/elkConfig.js'))"
-
-# 檢查依賴
-npm list --depth=0
-```
-
-### 常用監控指令
-```bash
-# 即時監控系統資源
-htop
-
-# 監控網路連接
-netstat -tulpn | grep :8080
-
-# 監控日誌
-tail -f backend.log
-```
-
----
-
-## 📝 更新和維護
-
-### 系統更新
-```bash
-# 更新專案程式碼
-git pull origin main
-
-# 更新後端依賴
-cd backend && npm update
-
-# 更新前端依賴
-cd frontend && npm update
-
-# 重新啟動服務
-./run.sh
-```
-
-### 定期維護任務
-- **每週**: 檢查日誌檔案大小和系統資源使用
-- **每月**: 更新依賴套件和安全性修補
-- **每季**: 檢查 API Key 有效性和配額使用
-
----
-
 ## 🎯 專案結構說明
 
 ```
@@ -468,26 +278,29 @@ ddos-attack-graph-demo/
 ├── run.sh                 # 啟動腳本
 └── cloudflare-field-mapping.js  # 欄位對應表
 ```
-
 ---
 
-## ✅ 部署檢查清單
+## 🏗 整體架構設計
 
-### 基本功能檢查
-- [ ] Node.js 環境已安裝（v16+）
-- [ ] 前後端依賴已安裝
-- [ ] 環境變數已設定（至少 GEMINI_API_KEY）
-- [ ] 後端服務可啟動（http://localhost:8080）
-- [ ] 前端服務可啟動（http://localhost:3000）
-- [ ] AI 分析功能正常
-- [ ] 檔案上傳分析功能正常
-
-### 進階功能檢查（可選）
-- [ ] ELK MCP Server 已部署
-- [ ] Elasticsearch 連接正常
-- [ ] ELK 整合分析功能正常
-- [ ] OWASP 分類功能正常
----
+### 系統架構圖
+```
+┌─────────────┐    MCP Protocol    ┌─────────────┐    HTTP API    ┌─────────────┐
+│   AI 分析    │◄─────────────────►│ MCP Server  │◄─────────────►│ ELK Stack   │
+│   系統       │                   │  (Docker)   │                │    (VM)     │
+└─────────────┘                   └─────────────┘                └─────────────┘
+       │                                                                   │
+       ▼                                                                   │
+┌─────────────┐                                                           │
+│ 欄位對應表   │                                                           │
+│ + OWASP    │                                                           │
+│ 參考資料    │                                                           │
+└─────────────┘                                                           │
+       │                                                                   │
+       ▼                                                                   │
+┌─────────────┐    在發現攻擊時觸發    ┌─────────────┐◄─────────────────────┘
+│ OWASP API   │◄─────────────────────│ 攻擊事件     │
+│ 查詢服務    │                      │ 檢測器       │
+└─────────────┘                      └─────────────┘
 
 🎉 **恭喜！DDoS 攻擊圖表分析系統已成功部署！**
 
