@@ -13,27 +13,48 @@
 ## 🔧 系統需求
 
 ### 基本環境
-- **作業系統**: Linux/macOS/Windows
-- **Node.js**: 版本 16.x 或以上
-- **npm**: 版本 8.x 或以上
-- **記憶體**: 最少 4GB RAM
-- **磁碟空間**: 最少 2GB 可用空間
+- **作業系統**: 建議使用 Linux/macOS
+- **Node.js**: 版本 18.x 或以上
+- **npm**: 版本 9.x 或以上
+- **Python**: 版本 3.8+ 
 
-### 可選元件（進階功能）
-- **Docker**: 用於 ELK MCP Server（如需 ELK 整合）
-- **Elasticsearch**: 版本 7.x 或 8.x（如有現有 ELK 環境）
-- **Python**: 版本 3.8+ （如需 mcp-proxy）
+### 核心工具 (必要)
+- **uv**: 用於安裝 Python 工具的 pip 編譯器與解析器。
+- **mcp-proxy**: ELK MCP Server 的代理工具，為 ELK 整合的關鍵元件。
 
-## 📦 快速部署（推薦）
+## 📦 快速部署步驟
 
-### 1. 克隆專案
+### 1. 安裝前置工具 (mcp-proxy)
+
+在開始之前，您必須先安裝 `mcp-proxy`。
+
 ```bash
-git clone <repository-url>
-cd ddos-attack-graph-demo
+# 步驟 1: 安裝 uv (如果尚未安裝)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 步驟 2: 使用 uv 安裝 mcp-proxy
+uv tool install mcp-proxy
+
+# 步驟 3: 將 uv 的工具路徑加入到您的 shell 環境變數中
+# 這一步很重要，否則系統會找不到 mcp-proxy 指令
+# 根據您的 shell (bash, zsh, etc.)，將下面這行加入到 ~/.bashrc, ~/.zshrc, 或對應的設定檔中
+export PATH="$HOME/.local/bin:$PATH"
+
+# 步驟 4: 重新載入 shell 設定或重開一個新的終端
+source ~/.zshrc  # 如果您使用 zsh
+# source ~/.bashrc # 如果您使用 bash
+
+# 步驟 5: 驗證 mcp-proxy 是否安裝成功
+mcp-proxy --version
 ```
 
-### 2. 一鍵安裝依賴
+### 2. 克隆並安裝專案
+
 ```bash
+# 克隆專案
+git clone <repository-url>
+cd ddos-attack-graph-demo
+
 # 安裝後端依賴
 cd backend
 npm install
@@ -41,268 +62,90 @@ npm install
 # 安裝前端依賴
 cd ../frontend
 npm install
-
-# 返回專案根目錄
-cd ..
 ```
 
-### 3. 基本配置
-```bash
-# 複製環境變數範例檔案
-cp backend/env.example backend/.env
+### 3. 設定 API 金鑰與組態
 
-# 編輯配置檔案（必須設定 AI API Key）
-nano backend/.env
-```
+本專案主要有兩種設定方式：
 
-### 4. 快速啟動
-```bash
-# 使用提供的啟動腳本
-chmod +x run.sh
-./run.sh
-```
+- **前端設定**: 您的 Google Gemini API Key 是在前端介面的「AI 模型設定」頁面中直接輸入，並在每次請求時傳送至後端。**因此，您不需要在後端設定環境變數**。
 
-**服務訪問地址：**
-- 前端介面：http://localhost:3000
-- 後端 API：http://localhost:8080
+- **後端組態**: ELK (Elasticsearch) 相關的連線設定，已寫在 `backend/config/elkConfig.js` 檔案中。如有需要，您可以直接修改該檔案。
 
----
+**注意**: 專案中的 `.env` 檔案僅用於開發和執行獨立的測試腳本 (`test-*.js`)，對於正常的應用程式啟動並非必要步驟。
 
-## 🛠️ 詳細部署步驟
+### 4. 啟動應用程式
 
-### 步驟 1: 環境準備
+您可以使用 `run.sh` 腳本來一次啟動所有服務，或分別手動啟動。
 
-#### 1.1 檢查 Node.js 版本
-```bash
-node --version  # 應該是 v16.x 或以上
-npm --version   # 應該是 8.x 或以上
-```
+**方式一：使用啟動腳本 (推薦)**
 
-#### 1.2 安裝 Node.js（如需要）
-```bash
-# macOS (使用 Homebrew)
-brew install node
-
-# Ubuntu/Debian
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-sudo apt-get install -y nodejs
-
-# CentOS/RHEL
-curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -
-sudo yum install -y nodejs
-```
-
-### 步驟 2: 專案安裝
-
-#### 2.1 克隆專案
-```bash
-git clone <repository-url>
-cd ddos-attack-graph-demo
-```
-
-#### 2.2 安裝後端依賴
-```bash
-cd backend
-npm install
-
-# 驗證關鍵依賴安裝
-
-npm list @modelcontextprotocol/sdk
-npm list express
-```
-
-#### 2.3 安裝前端依賴
-```bash
-cd ../frontend
-npm install
-
-# 驗證關鍵依賴安裝
-npm list react
-npm list @mui/material
-npm list vis-network
-```
-
-### 步驟 3: 配置設定
-
-#### 3.1 建立環境配置檔案
-```bash
-cd ../backend
-cp env.example .env
-```
-
-#### 3.2 基本配置（必要）
-編輯 `backend/.env` 檔案：
-
-```bash
-# ===========================================
-# 必要配置 - AI 分析功能
-# ===========================================
-GEMINI_API_KEY=your_actual_gemini_api_key_here
-GEMINI_MODEL=gemini-2.5-flash
-
-# ===========================================
-# 服務配置
-# ===========================================
-PORT=8080
-NODE_ENV=development
-```
-
-**🚨 重要：必須設定有效的 Google Gemini API Key**
-
-#### 3.3 Google Gemini API Key 申請
-1. 前往 [Google AI Studio](https://makersuite.google.com/app/apikey)
-2. 登入 Google 帳號
-3. 點擊「Create API Key」
-4. 複製 API Key 並更新 `.env` 檔案
-
-#### 3.4 ELK 整合配置（必要）
-
-配置 ELK 連接以啟用即時資料分析：
-
-```bash
-# ===========================================
-# ELK MCP 連接配置（必要）
-# ===========================================
-ELK_MCP_SERVER_URL=http://your-elk-server:8080
-ELK_MCP_PROTOCOL=proxy
-
-# Elasticsearch 配置（使用 API Key 認證，無需用戶名/密碼）
-ELK_HOST=https://your-elasticsearch:9200
-ELK_INDEX=your-log-index-*
-ELK_API_KEY=your_elasticsearch_api_key
-
-# 查詢配置
-ELK_TIME_RANGE=1h
-ELK_MAX_TIME_RANGE=24h
-ELK_ATTACK_THRESHOLD=20
-ELK_TIME_WINDOW=10
-```
-
-### 步驟 4: 服務啟動
-
-#### 4.1 方法一：使用啟動腳本（推薦）
 ```bash
 # 回到專案根目錄
 cd ..
 
-# 賦予執行權限
+# 賦予腳本執行權限
 chmod +x run.sh
 
-# 啟動服務
+# 執行腳本
 ./run.sh
 ```
 
-#### 4.2 方法二：手動啟動
+**方式二：手動啟動**
+
+需要開啟兩個終端視窗。
+
 ```bash
 # 終端 1: 啟動後端服務
 cd backend
-node index.js &
+node index.js
+```
 
-# 終端 2: 啟動前端服務（另開新終端）
+```bash
+# 終端 2: 啟動前端服務
 cd frontend
 npm start
-### 步驟 5: 驗證部署
-
-#### 5.1 檢查服務狀態
-```bash
-# 檢查後端服務
-curl http://localhost:8080/api/models
-# 預期回應：Gemini 模型列表
-
-# 檢查前端服務
-curl http://localhost:3000
-# 預期回應：HTML 頁面內容
 ```
 
-#### 5.2 檢查進程
-```bash
-# 檢查 Node.js 進程
-ps aux | grep node
+### 5. 驗證與存取
 
-# 檢查端口使用
-netstat -an | grep :3000  # 前端
-netstat -an | grep :8080  # 後端
-```
-程式Server 安裝 mcp proxy 
-uv tool install mcp-proxy
-
-#### 5.3 瀏覽器測試
-1. 開啟瀏覽器訪問：http://localhost:3000
-2. 檢查是否看到 DDoS 分析系統介面
-3. 導航至「AI 助手設定」頁面
-4. 確認 API Key 設定正確
-5. 上傳測試日誌檔案進行分析
+- **前端介面**: 開啟瀏覽器訪問 http://localhost:3000
+- **後端 API**: 服務運行在 http://localhost:8080
 
 ---
 
 ## ⚙️ ELK 整合設定（進階功能）
 
-### 情況 1: 您有現有的 ELK 環境
+如果您有現成的 ELK 環境，需要額外部署 `Elasticsearch MCP Server` 來橋接本系統。
 
-#### 1.1 部署 Elasticsearch MCP Server
+### 部署 Elasticsearch MCP Server
+
 ```bash
 # 使用 Docker 部署 MCP Server
-docker run --rm  -d -e ES_URL=https://your-elasticsearch:9200   -e ES_API_KEY=your-elasticsearch1_api_key   -e ES_SSL_SKIP_VERIFY=true   -p 8080:8080   docker.elastic.co/mcp/elasticsearch http
+# 請將 your-elasticsearch-ip 和 your-elasticsearch-api-key 換成您自己的設定
+docker run --rm -d \
+  -e ES_URL=https://your-elasticsearch-ip:9200 \
+  -e ES_API_KEY=your-elasticsearch-api-key \
+  -e ES_SSL_SKIP_VERIFY=true \
+  -p 8080:8080 \
+  docker.elastic.co/mcp/elasticsearch http
 ```
-
-#### 1.2 更新系統配置
-```bash
-# 編輯 backend/config/elkConfig.js
-修改 // HTTP MCP Server URL（您的 MCP 服務位址）
-    serverUrl: process.env.ELK_MCP_SERVER_URL || 'http://your-elasticsearch:8080',
-修改 // mcp-proxy 模式配置（推薦）
-      '--transport=streamablehttp',
-      `http://your-elasticsearch:8080/mcp`
-修改 // Elasticsearch 連接配置
-    host: process.env.ELK_HOST || 'https://your-elasticsearch:9200',
-
-修改 //ELK Table
-    index: process.env.ELK_INDEX || 'your-elasticsearch_table_name',
-新增 //elk api key
-    apiKey: process.env.ELK_API_KEY || 'your-elasticsearch1_api_key',
-```
-
+部署成功後，請將 `backend/.env` 中的 ELK 相關設定指向您部署的 MCP Server 和 Elasticsearch 實例。
 
 ---
+
 ## 🎯 專案結構說明
 
 ```
 ddos-attack-graph-demo/
 ├── backend/                 # 後端 Node.js 服務
-│   ├── services/           # 核心服務 (ELK MCP, AI 分析)
+│   ├── services/           # 核心服務 (ELK MCP, AI 分析, 趨勢分析)
 │   ├── config/             # 配置檔案
-│   ├── test-*.js          # 測試腳本
-│   └── index.js           # 主要 API 服務
-├── frontend/               # 前端 React 應用
-│   └── src/               # React 組件和頁面
-├── *.md                   # 文檔檔案
-├── run.sh                 # 啟動腳本
-└── cloudflare-field-mapping.js  # 欄位對應表
-```
----
-
-## 🏗 整體架構設計
-
-### 系統架構圖
-```
-┌─────────────┐    MCP Protocol    ┌─────────────┐    HTTP API    ┌─────────────┐
-│   AI 分析    │◄─────────────────►│ MCP Server  │◄─────────────►│ ELK Stack   │
-│   系統       │                   │  (Docker)   │                │    (VM)     │
-└─────────────┘                   └─────────────┘                └─────────────┘
-       │                                                                   │
-       ▼                                                                   │
-┌─────────────┐                                                           │
-│ 欄位對應表   │                                                           │
-│ + OWASP    │                                                           │
-│ 參考資料    │                                                           │
-└─────────────┘                                                           │
-       │                                                                   │
-       ▼                                                                   │
-┌─────────────┐    在發現攻擊時觸發    ┌─────────────┐◄─────────────────────┘
-│ OWASP API   │◄─────────────────────│ 攻擊事件     │
-│ 查詢服務    │                      │ 檢測器       │
-└─────────────┘                      └─────────────┘
-
-🎉 **恭喜！DDoS 攻擊圖表分析系統已成功部署！**
-
-如有任何問題，請參考故障排除章節或檢查日誌檔案。 
+│   ├── test-*.js           # 各種測試與除錯腳本
+│   └── index.js            # 主要 API 服務
+├── frontend/                # 前端 React 應用
+│   └── src/                # React 組件和頁面
+├── STARTUP_GUIDE.md         # 啟動指南 (本檔案)
+├── run.sh                   # 快速啟動腳本
+└── cloudflare-field-mapping.js  # Cloudflare 日誌欄位對應表
+``` 
