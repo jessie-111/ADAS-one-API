@@ -1,8 +1,8 @@
 // 測試 ELK 分析流程的詳細 debug
 require('dotenv').config();
 
-const { elkMCPClient } = require('./services/elkMCPClient');
-const { ELK_CONFIG } = require('./config/elkConfig');
+const { elkMCPClient } = require('../services/elkMCPClient');
+const { ELK_CONFIG } = require('../config/elkConfig');
 
 async function testELKAnalysisFlow() {
   console.log('🔍 測試完整的 ELK 分析流程...');

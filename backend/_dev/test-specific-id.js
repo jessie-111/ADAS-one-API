@@ -1,7 +1,7 @@
 // 測試查詢特定 ELK 記錄 ID
 require('dotenv').config();
 
-const { elkMCPClient } = require('./services/elkMCPClient');
+const { elkMCPClient } = require('../services/elkMCPClient');
 
 async function testSpecificRecordId() {
   const targetId = '6h3ZNJgBWLoYWRcSyAui';

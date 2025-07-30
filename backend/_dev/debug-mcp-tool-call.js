@@ -1,6 +1,6 @@
 // 直接測試 MCP 工具調用
-const { elkMCPClient } = require('./services/elkMCPClient');
-const { ELK_CONFIG } = require('./config/elkConfig');
+const { elkMCPClient } = require('../services/elkMCPClient');
+const { ELK_CONFIG } = require('../config/elkConfig');
 
 async function testMCPToolCall() {
   console.log('🔧 開始測試 MCP 工具調用...\n');

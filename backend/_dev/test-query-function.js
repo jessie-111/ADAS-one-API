@@ -1,7 +1,7 @@
 // 測試 queryElasticsearch 函數
 require('dotenv').config();
 
-const { elkMCPClient } = require('./services/elkMCPClient');
+const { elkMCPClient } = require('../services/elkMCPClient');
 
 async function testQueryFunction() {
   console.log('🔍 測試 queryElasticsearch 函數...');

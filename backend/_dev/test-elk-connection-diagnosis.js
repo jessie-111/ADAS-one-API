@@ -1,8 +1,8 @@
 // ELK MCP 連接全面診斷工具
 // 測試各個連接環節並提供詳細的診斷信息
 
-const { ELK_CONFIG } = require('./config/elkConfig');
-const { elkMCPClient } = require('./services/elkMCPClient');
+const { ELK_CONFIG } = require('../config/elkConfig');
+const { elkMCPClient } = require('../services/elkMCPClient');
 const https = require('https');
 const http = require('http');
 const { URL } = require('url');

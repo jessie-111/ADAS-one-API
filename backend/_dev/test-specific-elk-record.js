@@ -1,7 +1,7 @@
 // 測試特定 ELK 記錄查詢
 require('dotenv').config();
 
-const { elkMCPClient } = require('./services/elkMCPClient');
+const { elkMCPClient } = require('../services/elkMCPClient');
 
 async function testSpecificRecord() {
   console.log('🔍 測試查詢特定 ELK 記錄...');

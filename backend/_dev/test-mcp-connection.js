@@ -1,7 +1,7 @@
 // 測試 ELK MCP 連接
 require('dotenv').config();
 
-const { ElkMCPClient } = require('./services/elkMCPClient');
+const { ElkMCPClient } = require('../services/elkMCPClient');
 
 async function testMCPConnection() {
   console.log('🔍 開始測試 ELK MCP 連接...');
