@@ -7,15 +7,20 @@ const readline = require('readline');
 const { elkMCPClient } = require('./services/elkMCPClient');
 const { ELK_CONFIG, OWASP_REFERENCES, identifyOWASPType } = require('./config/elkConfig');
 const { CLOUDFLARE_FIELD_MAPPING, generateAIFieldReference } = require('../cloudflare-field-mapping');
+const TrendAnalysisService = require('./services/trendAnalysisService');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
+// 初始化趨勢分析服務
+const trendAnalysisService = new TrendAnalysisService();
+
 // --- 常數設定 ---
 const LOG_FILE_PATH = '../CF-http_log.txt';
 const TIME_WINDOW_SECONDS = 10;
-const ATTACK_THRESHOLD = 20;
+// 移除攻擊閾值限制，因為 Cloudflare 已經做了初步判斷
+// const ATTACK_THRESHOLD = 20;
 
 // --- 工具函數 ---
 // 生成分析 ID
@@ -119,34 +124,70 @@ function buildAttackRelationshipGraph(allAttacks) {
     }
   });
 
-  // 計算關聯強度
-  const correlationStrength = calculateCorrelationStrength(ipGroups, domainGroups);
+  // 🎯 優化：只選擇 Top 5 攻擊IP來避免關聯圖過於複雜
+  const sortedIpGroups = Array.from(ipGroups.values())
+    .sort((a, b) => b.totalSeverity - a.totalSeverity)
+    .slice(0, 5); // 只取前5個最嚴重的攻擊IP
+  
+  console.log(`🔍 關聯圖優化：從 ${ipGroups.size} 個攻擊IP中選擇Top 5進行顯示`);
+  sortedIpGroups.forEach((group, index) => {
+    console.log(`  ${index + 1}. ${group.ip} - 嚴重程度: ${group.totalSeverity}, 目標數: ${group.targets.length}`);
+  });
+  
+  // 重新建立優化後的 ipGroups 和相關的 domainGroups
+  const optimizedIpGroups = new Map();
+  const optimizedDomainGroups = new Map();
+  
+  sortedIpGroups.forEach(group => {
+    optimizedIpGroups.set(group.ip, group);
+    
+    // 重新計算相關的域名資訊
+    group.targets.forEach(target => {
+      const baseDomain = target.domain.split('.').slice(-2).join('.');
+      if (!optimizedDomainGroups.has(baseDomain)) {
+        optimizedDomainGroups.set(baseDomain, {
+          baseDomain: baseDomain,
+          subdomains: new Set(),
+          attackers: new Set()
+        });
+      }
+      optimizedDomainGroups.get(baseDomain).subdomains.add(target.domain);
+      optimizedDomainGroups.get(baseDomain).attackers.add(group.ip);
+    });
+  });
+
+  // 計算關聯強度（使用優化後的資料）
+  const correlationStrength = calculateCorrelationStrength(optimizedIpGroups, optimizedDomainGroups);
 
   return {
-    // IP攻擊者分析
-    ipClusters: Array.from(ipGroups.values()).map(group => ({
+    // IP攻擊者分析（僅Top 5）
+    ipClusters: Array.from(optimizedIpGroups.values()).map(group => ({
       ...group,
       techniques: Array.from(group.techniques),
       riskLevel: group.totalSeverity > 100 ? 'High' : group.totalSeverity > 50 ? 'Medium' : 'Low'
     })),
     
-    // 目標基礎設施分析  
-    infrastructureMap: Array.from(domainGroups.values()).map(group => ({
+    // 目標基礎設施分析（基於Top 5 IP）
+    infrastructureMap: Array.from(optimizedDomainGroups.values()).map(group => ({
       ...group,
       subdomains: Array.from(group.subdomains),
       attackers: Array.from(group.attackers),
       isTargetedInfrastructure: group.attackers.size > 1 || group.subdomains.size > 2
     })),
     
-    // 攻擊模式分析
+    // 攻擊模式分析（保留完整資料用於統計）
     attackPatternAnalysis: Array.from(pathTypeGroups.values()),
     
     // 關聯強度評估
     correlationMetrics: {
       strength: correlationStrength,
-      multiTargetAttackers: Array.from(ipGroups.values()).filter(g => g.isMultiTarget).length,
+      multiTargetAttackers: Array.from(optimizedIpGroups.values()).filter(g => g.isMultiTarget).length,
       coordinatedAttack: correlationStrength > 0.7,
-      infrastructureScope: Array.from(domainGroups.values())[0]?.subdomains?.size || 0
+      infrastructureScope: Array.from(optimizedDomainGroups.values())[0]?.subdomains?.size || 0,
+      // 新增：顯示優化資訊
+      totalIPs: ipGroups.size,
+      displayedIPs: optimizedIpGroups.size,
+      optimized: ipGroups.size > 5
     }
   };
 }
@@ -182,7 +223,9 @@ function calculateCorrelationStrength(ipGroups, domainGroups) {
   // 攻擊技術多樣性加權
   const totalTechniques = new Set();
   ipGroups.forEach(group => {
-    group.techniques.forEach(tech => totalTechniques.add(tech));
+    if (group.techniques) {
+      group.techniques.forEach(tech => totalTechniques.add(tech));
+    }
   });
   strength += Math.min(totalTechniques.size * 0.1, 0.3);
   
@@ -299,7 +342,6 @@ app.post('/api/test-ai', async (req, res) => {
 // --- 核心邏輯函式 ---
 
 async function processLogFile(config) {
-  const ipRequestCounts = {};
   const detectedAttacks = {};
   const globalStats = {
     totalRequests: 0,
@@ -308,6 +350,7 @@ async function processLogFile(config) {
     countryCounts: new Map(),
     ipCounts: new Map(),
     uriCounts: new Map(),
+    httpStatusCounts: new Map(),
     firstTimestamp: null,
     lastTimestamp: null,
     // 新增：攻擊模式統計
@@ -338,7 +381,7 @@ async function processLogFile(config) {
     try {
       const logEntry = JSON.parse(line);
       updateGlobalStats(logEntry, globalStats);
-      detectAttack(logEntry, ipRequestCounts, detectedAttacks);
+      detectAttack(logEntry, null, detectedAttacks); // 不再需要 ipRequestCounts
     } catch (e) {
       // 忽略解析錯誤
     }
@@ -443,8 +486,13 @@ async function processLogFile(config) {
     }
     
     const aiAnalysis = await getAIAssessment({ ...config, attackData: detailedAttackData });
-    // 將攻擊資料包含在回傳結果中
-    return { ...aiAnalysis, attackData };
+    // 將攻擊資料包含在回傳結果中，並包含WAF分數資料
+    return { 
+      ...aiAnalysis, 
+      attackData,
+      wafScoreData: globalStats.wafScoreData || [],
+      globalStats,
+    };
   } else {
     const getTop5 = (map) => Array.from(map.entries()).sort(([, a], [, b]) => b - a).slice(0, 5).map(([key, value]) => ({ item: key, count: value }));
     
@@ -466,7 +514,12 @@ async function processLogFile(config) {
         topURIs: getTop5(globalStats.uriCounts),
         logType: 'event_only'
       };
-      return getAIAssessment({ ...config, eventData });
+      const aiAnalysis = await getAIAssessment({ ...config, eventData });
+      return { 
+        ...aiAnalysis, 
+        wafScoreData: globalStats.wafScoreData || [],
+        globalStats,
+      };
     } else {
              // 整體摘要分析（包含流量和事件資料）
        const overallData = {
@@ -497,7 +550,12 @@ async function processLogFile(config) {
          },
          logType: 'comprehensive'
        };
-      return getAIAssessment({ ...config, overallData });
+      const aiAnalysis = await getAIAssessment({ ...config, overallData });
+      return { 
+        ...aiAnalysis, 
+        wafScoreData: globalStats.wafScoreData || [],
+        globalStats,
+      };
     }
   }
 }
@@ -518,11 +576,25 @@ function updateGlobalStats(logEntry, globalStats) {
     } catch (e) {}
   }
   
+  // 收集WAF分數資料
+  if (!globalStats.wafScoreData) globalStats.wafScoreData = [];
+  if (logEntry.ClientRequestURI && logEntry.WAFAttackScore !== undefined) {
+    globalStats.wafScoreData.push({
+      uri: logEntry.ClientRequestURI,
+      wafScore: logEntry.WAFAttackScore || 0,
+      clientIP: logEntry.ClientIP,
+      timestamp: logEntry.EdgeStartTimestamp
+    });
+  }
+  
   // 基本統計
   const { ClientCountry, ClientIP, ClientRequestURI, SecurityAction, WAFAttackScore, WAFSQLiAttackScore, WAFXSSAttackScore, SecurityRuleDescription } = logEntry;
   if (ClientCountry) globalStats.countryCounts.set(ClientCountry, (globalStats.countryCounts.get(ClientCountry) || 0) + 1);
   if (ClientIP) globalStats.ipCounts.set(ClientIP, (globalStats.ipCounts.get(ClientIP) || 0) + 1);
   if (ClientRequestURI) globalStats.uriCounts.set(ClientRequestURI, (globalStats.uriCounts.get(ClientRequestURI) || 0) + 1);
+  if (logEntry.EdgeResponseStatus) {
+    globalStats.httpStatusCounts.set(logEntry.EdgeResponseStatus, (globalStats.httpStatusCounts.get(logEntry.EdgeResponseStatus) || 0) + 1);
+  }
   
   // 安全事件統計
   if (SecurityAction === 'block') globalStats.securityEvents.blockedRequests++;
@@ -577,50 +649,37 @@ function updateGlobalStats(logEntry, globalStats) {
   }
 }
 
-function detectAttack(logEntry, ipRequestCounts, detectedAttacks) {
+function detectAttack(logEntry, unused, detectedAttacks) {
     const { ClientIP, EdgeStartTimestamp, ClientRequestHost, ClientRequestURI, EdgeResponseBytes, EdgeRequestHost } = logEntry;
     if (!ClientIP || !EdgeStartTimestamp) return;
 
-    const timestamp = Math.floor(new Date(EdgeStartTimestamp).getTime() / 1000);
-    const windowStart = timestamp - (timestamp % TIME_WINDOW_SECONDS);
-
-    if (!ipRequestCounts[ClientIP]) ipRequestCounts[ClientIP] = [];
-
-    ipRequestCounts[ClientIP] = ipRequestCounts[ClientIP].filter(r => r.windowStart >= windowStart - TIME_WINDOW_SECONDS);
-
-    let currentWindow = ipRequestCounts[ClientIP].find(r => r.windowStart === windowStart);
-    if (!currentWindow) {
-        currentWindow = { windowStart, count: 0 };
-        ipRequestCounts[ClientIP].push(currentWindow);
+    // 移除閾值判斷，直接基於每個請求來檢測潛在攻擊
+    // 因為資料來源已經是經過 Cloudflare 篩選的，不需要額外的頻率閾值
+    
+    // 優先使用 EdgeRequestHost（Cloudflare 實際處理的域名），再使用 ClientRequestHost
+    const realHost = EdgeRequestHost || ClientRequestHost || 'unknown-host';
+    const clientHost = ClientRequestHost || 'unknown-host';
+    
+    // Debug: 記錄可能的 Host header 偽造
+    if (EdgeRequestHost && ClientRequestHost && EdgeRequestHost !== ClientRequestHost) {
+        console.log(`⚠️ 偵測到 Host header 可能偽造: 實際=${EdgeRequestHost}, 聲稱=${ClientRequestHost}, IP=${ClientIP}`);
     }
-    currentWindow.count++;
-
-    if (currentWindow.count >= ATTACK_THRESHOLD) {
-        // 優先使用 EdgeRequestHost（Cloudflare 實際處理的域名），再使用 ClientRequestHost
-        const realHost = EdgeRequestHost || ClientRequestHost || 'unknown-host';
-        const clientHost = ClientRequestHost || 'unknown-host';
-        
-        // Debug: 記錄可能的 Host header 偽造
-        if (EdgeRequestHost && ClientRequestHost && EdgeRequestHost !== ClientRequestHost) {
-            console.log(`⚠️ 偵測到 Host header 可能偽造: 實際=${EdgeRequestHost}, 聲稱=${ClientRequestHost}, IP=${ClientIP}`);
-        }
-        
-        const attackId = `${ClientIP}@${realHost}`;
-        if (!detectedAttacks[attackId]) {
-            detectedAttacks[attackId] = {
-                attackDomain: realHost,  // 使用真實的域名
-                claimedDomain: clientHost !== realHost ? clientHost : null,  // 記錄聲稱的域名
-                targetURL: ClientRequestURI || '/',
-                sourceList: new Map(),
-                totalBytes: 0,
-            };
-        }
-        const attack = detectedAttacks[attackId];
-        attack.totalBytes += EdgeResponseBytes || 0;
-        const sourceInfo = attack.sourceList.get(ClientIP) || { ip: ClientIP, count: 0, country: logEntry.ClientCountry || 'N/A', asn: logEntry.ClientASN || 'N/A' };
-        sourceInfo.count++;
-        attack.sourceList.set(ClientIP, sourceInfo);
+    
+    const attackId = `${ClientIP}@${realHost}`;
+    if (!detectedAttacks[attackId]) {
+        detectedAttacks[attackId] = {
+            attackDomain: realHost,  // 使用真實的域名
+            claimedDomain: clientHost !== realHost ? clientHost : null,  // 記錄聲稱的域名
+            targetURL: ClientRequestURI || '/',
+            sourceList: new Map(),
+            totalBytes: 0,
+        };
     }
+    const attack = detectedAttacks[attackId];
+    attack.totalBytes += EdgeResponseBytes || 0;
+    const sourceInfo = attack.sourceList.get(ClientIP) || { ip: ClientIP, count: 0, country: logEntry.ClientCountry || 'N/A', asn: logEntry.ClientASN || 'N/A' };
+    sourceInfo.count++;
+    attack.sourceList.set(ClientIP, sourceInfo);
 }
 
 async function getAIAssessment(requestBody) {
@@ -1079,8 +1138,23 @@ async function processELKLogs(config) {
   try {
     console.log(`🔍 開始處理 ELK 日誌資料 (時間範圍: ${timeRange})...`);
     
+    // 確保ELK連接狀態
+    console.log('🔄 確保 ELK MCP 連接狀態...');
+    await elkMCPClient.ensureConnection();
+    console.log('✅ ELK MCP 連接確認完成');
+    
     // 從 ELK 獲取日誌資料
-    const elkData = await elkMCPClient.queryElasticsearch(timeRange);
+    let elkData;
+    try {
+      elkData = await elkMCPClient.queryElasticsearch(timeRange);
+    } catch (queryError) {
+      console.error('❌ ELK 查詢執行失敗:', queryError);
+      throw new Error(`ELK 查詢失敗: ${queryError.message}。請檢查 ELK 配置或網路連接。`);
+    }
+    
+    if (!elkData) {
+      throw new Error('ELK 查詢返回空結果，請檢查 Elasticsearch 服務狀態');
+    }
     
     if (!elkData.hits || elkData.hits.length === 0) {
       console.log('⚠️  未找到日誌資料');
@@ -1092,7 +1166,14 @@ async function processELKLogs(config) {
           timestamp: new Date().toISOString(),
           dataSource: 'elk',
           recordCount: 0
-        }
+        },
+        // 為攻擊來源統計提供空資料
+        topIPs: [],
+        topCountries: [],
+        topURIs: [],
+        topDomains: [],
+        wafScoreStats: [],
+        globalStats: { httpStatusCounts: new Map() },
       };
     }
     
@@ -1154,7 +1235,12 @@ async function processELKLogs(config) {
         owaspReferences: OWASP_REFERENCES.mainReferences
       });
       
-      return { ...aiAnalysis, attackData };
+      return { 
+        ...aiAnalysis, 
+        attackData,
+        wafScoreData: globalStats.wafScoreData || [],
+        globalStats,
+      };
     } else if (globalStats.totalBytes === 0 || (globalStats.totalBytes / globalStats.totalRequests) < 100) {
       // 事件型日誌分析
       const eventData = buildEventData(globalStats, owaspAnalysis);
@@ -1165,7 +1251,11 @@ async function processELKLogs(config) {
         owaspReferences: OWASP_REFERENCES.mainReferences
       });
       
-      return aiAnalysis;
+      return { 
+        ...aiAnalysis, 
+        wafScoreData: globalStats.wafScoreData || [],
+        globalStats,
+      };
     } else {
       // 整體綜合分析
       const overallData = buildOverallData(globalStats, owaspAnalysis);
@@ -1176,7 +1266,11 @@ async function processELKLogs(config) {
         owaspReferences: OWASP_REFERENCES.mainReferences
       });
       
-      return aiAnalysis;
+      return { 
+        ...aiAnalysis, 
+        wafScoreData: globalStats.wafScoreData || [],
+        globalStats,
+      };
     }
     
   } catch (error) {
@@ -1198,6 +1292,7 @@ function convertELKToLogEntry(elkRecord) {
     ClientRequestHost: elkRecord["ClientRequestHost"], // 客戶端聲稱的域名
     ClientRequestURI: elkRecord["ClientRequestURI"],
     EdgeResponseBytes: elkRecord["EdgeResponseBytes"] || 0,
+    ClientRequestBytes: elkRecord["ClientRequestBytes"] || 0, // 新增：客戶端請求位元組數
     EdgeResponseStatus: elkRecord["EdgeResponseStatus"],
     SecurityAction: elkRecord["SecurityAction"],
     SecurityRuleDescription: elkRecord["SecurityRuleDescription"],
@@ -1220,6 +1315,7 @@ async function analyzeLogEntries(logEntries) {
     countryCounts: new Map(),
     ipCounts: new Map(),
     uriCounts: new Map(),
+    httpStatusCounts: new Map(),
     firstTimestamp: null,
     lastTimestamp: null,
     timeRange: null, // 將在處理過程中設定
@@ -1240,12 +1336,11 @@ async function analyzeLogEntries(logEntries) {
   };
 
   const detectedAttacks = {};
-  const ipRequestTimes = new Map();
 
   // 處理每個日誌條目
   for (const entry of logEntries) {
     updateGlobalStats(entry, globalStats);
-    detectAttack(entry, ipRequestTimes, detectedAttacks);
+    detectAttack(entry, null, detectedAttacks); // 不再需要 ipRequestTimes
   }
 
   // 設定時間範圍
@@ -1456,6 +1551,476 @@ app.get('/api/elk/stats', async (req, res) => {
   }
 });
 
+// === 攻擊趨勢對比分析 API ===
+
+// 載入趨勢對比資料
+app.post('/api/load-trend-comparison', async (req, res) => {
+  const { timeRange } = req.body;
+  
+  try {
+    console.log(`🔍 開始載入趨勢對比資料 (時間範圍: ${timeRange})...`);
+    
+    // 計算對比時間區間
+    const periods = trendAnalysisService.calculateComparisonPeriods(timeRange);
+    
+    console.log(`當前時期: ${periods.current.start.toISOString()} - ${periods.current.end.toISOString()}`);
+    console.log(`上一時期: ${periods.previous.start.toISOString()} - ${periods.previous.end.toISOString()}`);
+
+    // 查詢實際ELK資料並分割為兩個時期
+    const allLogData = await queryActualELKData(timeRange);
+    
+    if (allLogData.length === 0) {
+      throw new Error('未找到任何日誌資料，請檢查ELK連接或數據範圍');
+    }
+
+    // 將資料按時間排序並分割為兩個相等時期
+    const sortedData = allLogData.sort((a, b) => 
+      new Date(a.EdgeStartTimestamp || a.timestamp) - new Date(b.EdgeStartTimestamp || b.timestamp)
+    );
+    
+    const midpoint = Math.floor(sortedData.length / 2);
+    const previousData = sortedData.slice(0, midpoint);
+    const currentData = sortedData.slice(midpoint);
+    
+    // 計算實際時間範圍
+    const actualPeriods = calculateActualPeriods(previousData, currentData, timeRange);
+
+    console.log(`✅ 數據分割完成:`);
+    console.log(`上一時期: ${previousData.length} 筆記錄 (${actualPeriods.previous.start} - ${actualPeriods.previous.end})`);
+    console.log(`當前時期: ${currentData.length} 筆記錄 (${actualPeriods.current.start} - ${actualPeriods.current.end})`);
+
+    // 基於ClientRequestBytes生成流量統計
+    const currentAnalysis = trendAnalysisService.analyzePeriodTraffic(currentData, actualPeriods.current);
+    const previousAnalysis = trendAnalysisService.analyzePeriodTraffic(previousData, actualPeriods.previous);
+    
+    // 生成單一對比圖表資料
+    const comparisonChart = trendAnalysisService.generateTrafficComparisonChart(
+      currentAnalysis, 
+      previousAnalysis, 
+      actualPeriods
+    );
+
+    // 計算對比統計
+    const statistics = trendAnalysisService.calculateComparisonStats(currentAnalysis, previousAnalysis);
+
+    console.log(`✅ 趨勢對比資料載入完成`);
+    console.log(`當前時期: ${currentAnalysis.totalRequests} 次請求, ${trendAnalysisService.formatBytes(currentAnalysis.totalRequestTraffic)} 流量`);
+    console.log(`上一時期: ${previousAnalysis.totalRequests} 次請求, ${trendAnalysisService.formatBytes(previousAnalysis.totalRequestTraffic)} 流量`);
+
+    res.json({
+      success: true,
+      periods: actualPeriods,
+      currentPeriod: currentAnalysis,
+      previousPeriod: previousAnalysis,
+      comparisonChart,
+      statistics
+    });
+
+  } catch (error) {
+    console.error('❌ 趨勢資料載入失敗:', error);
+    res.status(500).json({ 
+      error: error.message,
+      details: '趨勢對比資料載入失敗'
+    });
+  }
+});
+
+// AI 趨勢分析
+app.post('/api/analyze-attack-trends', async (req, res) => {
+  const { apiKey, model, currentData, previousData, periods } = req.body;
+  
+  try {
+    console.log('🤖 開始 AI 趨勢分析...');
+    
+    if (!apiKey) {
+      throw new Error('請先在「AI分析設定」頁面設定 Gemini API Key');
+    }
+    
+    if (!currentData || !previousData) {
+      throw new Error('請先載入趨勢圖表資料');
+    }
+
+    // 建構AI分析提示詞
+    const analysisPrompt = trendAnalysisService.buildTrendAnalysisPrompt(currentData, previousData, periods);
+    
+    console.log('📝 生成 AI 分析提示詞...');
+    
+    // 調用Gemini AI分析
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const geminiModel = genAI.getGenerativeModel({ model: model || 'gemini-1.5-pro' });
+    
+    const result = await geminiModel.generateContent(analysisPrompt);
+    const response = await result.response;
+    const trendAnalysis = response.text();
+
+    console.log('✅ AI 趨勢分析完成');
+
+    res.json({
+      success: true,
+      trendAnalysis,
+      metadata: {
+        analysisId: generateAnalysisId(),
+        timestamp: new Date().toISOString(),
+        model: model || 'gemini-1.5-pro',
+        isAIGenerated: true,
+        analysisType: 'traffic_trend_comparison'
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ AI趨勢分析失敗:', error);
+    res.status(500).json({ 
+      error: error.message,
+      details: 'AI趨勢分析失敗'
+    });
+  }
+});
+
+// 查詢實際ELK資料（基於現有數據範圍）
+async function queryActualELKData(timeRange, retryCount = 0) {
+  const maxRetries = 2;
+  
+  try {
+    console.log(`🔍 查詢實際ELK資料 (範圍: ${timeRange}, 嘗試: ${retryCount + 1}/${maxRetries + 1})...`);
+    
+    // 使用現有的elkMCPClient查詢，它會自動查詢最新可用數據
+    // 根據時間範圍調整查詢大小，確保有足夠數據進行對比
+    let querySize = getQuerySizeByTimeRange(timeRange);
+    
+    // 如果是重試，降低查詢大小
+    if (retryCount > 0) {
+      querySize = Math.floor(querySize * 0.7); // 減少30%
+      console.log(`🔄 重試查詢，降低查詢大小至: ${querySize}`);
+    }
+    
+    // 臨時修改ELK查詢大小
+    const originalQuery = elkMCPClient.buildElasticsearchQuery;
+    elkMCPClient.buildElasticsearchQuery = function(range, filters) {
+      const query = originalQuery.call(this, range, filters);
+      query.size = querySize; // 調整查詢數量
+      return query;
+    };
+    
+    const elkData = await elkMCPClient.queryElasticsearch('auto');
+    
+    // 恢復原始查詢方法
+    elkMCPClient.buildElasticsearchQuery = originalQuery;
+    
+    if (!elkData.hits || elkData.hits.length === 0) {
+      console.log('⚠️ 未找到ELK日誌資料');
+      return [];
+    }
+    
+    console.log(`📊 成功獲取 ${elkData.hits.length} 筆實際日誌記錄`);
+    
+    // 轉換ELK資料格式
+    const logEntries = elkData.hits.map(hit => convertELKToLogEntry(hit.source));
+    
+    // 按時間排序（最舊到最新）
+    logEntries.sort((a, b) => 
+      new Date(a.EdgeStartTimestamp || a.timestamp) - new Date(b.EdgeStartTimestamp || b.timestamp)
+    );
+    
+    console.log(`✅ 數據時間範圍: ${logEntries[0]?.EdgeStartTimestamp} - ${logEntries[logEntries.length-1]?.EdgeStartTimestamp}`);
+    
+    return logEntries;
+    
+  } catch (error) {
+    console.error(`❌ 查詢實際ELK資料失敗 (嘗試 ${retryCount + 1}):`, error.message);
+    
+    // 如果是超時錯誤且還有重試機會，進行重試
+    if ((error.message.includes('timeout') || error.message.includes('timed out')) && retryCount < maxRetries) {
+      console.log(`⏳ 檢測到超時錯誤，${2}秒後重試...`);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      return queryActualELKData(timeRange, retryCount + 1);
+    }
+    
+    // 提供更友好的錯誤信息
+    if (error.message.includes('timeout') || error.message.includes('timed out')) {
+      throw new Error(`查詢超時：${timeRange} 範圍的數據量過大，請嘗試較小的時間範圍（如1天或3天）`);
+    }
+    
+    throw error;
+  }
+}
+
+// 根據時間範圍獲取查詢大小
+function getQuerySizeByTimeRange(timeRange) {
+  const sizeMap = {
+    '1h': 2000,
+    '6h': 3000,
+    '1d': 4000,
+    '3d': 5000,
+    '7d': 6000,  // 降低7天查詢大小，避免超時
+    '30d': 8000  // 降低30天查詢大小
+  };
+  console.log(`📊 時間範圍 ${timeRange} 對應查詢大小: ${sizeMap[timeRange] || 6000}`);
+  return sizeMap[timeRange] || 6000;
+}
+
+// 計算實際時間範圍
+function calculateActualPeriods(previousData, currentData, timeRange) {
+  const getTimeRange = (data) => {
+    if (data.length === 0) return { start: null, end: null };
+    
+    const timestamps = data.map(entry => new Date(entry.EdgeStartTimestamp || entry.timestamp));
+    const start = new Date(Math.min(...timestamps));
+    const end = new Date(Math.max(...timestamps));
+    
+    return { start, end };
+  };
+  
+  const previousRange = getTimeRange(previousData);
+  const currentRange = getTimeRange(currentData);
+  
+  const formatDateRange = (start, end) => {
+    if (!start || !end) return 'N/A';
+    
+    const formatDate = (date) => {
+      return date.toLocaleDateString('zh-TW', {
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    };
+    
+    return `${formatDate(start)} - ${formatDate(end)}`;
+  };
+  
+  return {
+    current: {
+      start: currentRange.start,
+      end: currentRange.end,
+      label: `當前時期 (${formatDateRange(currentRange.start, currentRange.end)})`
+    },
+    previous: {
+      start: previousRange.start,
+      end: previousRange.end,
+      label: `上一時期 (${formatDateRange(previousRange.start, previousRange.end)})`
+    }
+  };
+}
+
+// 查詢特定時期的ELK資料（舊方法，保留備用）
+async function queryELKPeriodData(period) {
+  try {
+    console.log(`🔍 查詢時期資料: ${period.start.toISOString()} - ${period.end.toISOString()}`);
+    
+    // 確保 ELK 連接已建立
+    await elkMCPClient.ensureConnection();
+    
+    // 建構時間範圍查詢
+    const query = {
+      query: {
+        range: {
+          "@timestamp": {
+            gte: period.start.toISOString(),
+            lte: period.end.toISOString()
+          }
+        }
+      },
+      sort: [{ "@timestamp": { order: "asc" } }],
+      size: 10000 // 根據需要調整
+    };
+
+    console.log('📊 執行自定義時間範圍查詢...');
+    console.log('查詢時間範圍:', period.start.toISOString(), 'to', period.end.toISOString());
+    console.log('索引:', ELK_CONFIG.elasticsearch.index);
+
+    // 使用確保連接後的 elkMCPClient 查詢
+    const result = await elkMCPClient.client.callTool({
+      name: 'search',
+      arguments: {
+        index: ELK_CONFIG.elasticsearch.index,
+        query_body: query
+      }
+    });
+
+    if (result.isError) {
+      throw new Error(`ELK查詢失敗: ${result.content[0]?.text || 'Unknown error'}`);
+    }
+
+    // 處理 MCP Server 的回應 (複製現有邏輯)
+    const responseText = result.content[0]?.text || '';
+    console.log('MCP Server 回應 (摘要):', responseText.substring(0, 200) + '...');
+    
+    // 檢查是否有第二個 content（實際的資料）
+    const dataText = result.content[1]?.text || responseText;
+    console.log('實際資料長度:', dataText.length, '前 100 字元:', dataText.substring(0, 100));
+    
+    let records;
+    
+    try {
+      // 首先嘗試解析為記錄陣列（最常見的情況）
+      records = JSON.parse(dataText);
+      if (Array.isArray(records)) {
+        console.log(`✅ 解析為記錄陣列，找到 ${records.length} 筆記錄`);
+        return records.map(record => convertELKToLogEntry(record));
+      } else {
+        // 如果不是陣列，可能是標準 Elasticsearch 格式
+        console.log('⚠️ 回應不是陣列格式，嘗試提取hits');
+        const hits = records.hits?.hits || [];
+        console.log(`✅ 從hits中找到 ${hits.length} 筆記錄`);
+        return hits.map(hit => convertELKToLogEntry(hit._source));
+      }
+    } catch (e) {
+      // 如果都無法解析，嘗試從摘要中提取數字
+      console.log('⚠️ 無法解析JSON格式，嘗試解析摘要');
+      const match = responseText.match(/Total results: (\d+)/);
+      if (match) {
+        const totalCount = parseInt(match[1]);
+        console.log(`從摘要中發現 ${totalCount} 筆記錄，但無法解析詳細資料`);
+        // 返回空陣列但記錄數量
+        return [];
+      }
+      console.log('⚠️ 無法解析任何資料，回傳空陣列');
+      return [];
+    }
+    
+  } catch (error) {
+    console.error(`❌ 查詢時期資料失敗:`, error);
+    throw error;
+  }
+}
+
+// 調試端點：檢查時間分組問題
+app.get('/api/debug/time-grouping', async (req, res) => {
+  try {
+    console.log('🔍 開始調試時間分組...');
+    
+    // 查詢少量實際數據
+    const elkData = await elkMCPClient.queryElasticsearch('auto');
+    
+    if (!elkData.hits || elkData.hits.length === 0) {
+      return res.json({ error: '沒有找到數據' });
+    }
+    
+    // 轉換前10筆數據
+    const logEntries = elkData.hits.slice(0, 10).map(hit => convertELKToLogEntry(hit.source));
+    
+    // 分析時間分組
+    const results = [];
+    const groupInterval = 24 * 60 * 60 * 1000; // 1天
+    
+    logEntries.forEach((entry, i) => {
+      const timestamp = new Date(entry.EdgeStartTimestamp || entry.timestamp);
+      const timeKey = Math.floor(timestamp.getTime() / groupInterval) * groupInterval;
+      const requestBytes = parseInt(entry.ClientRequestBytes) || 0;
+      
+      results.push({
+        index: i,
+        originalTimestamp: entry.EdgeStartTimestamp,
+        parsedTimestamp: timestamp.toISOString(),
+        timeKey: new Date(timeKey).toISOString(),
+        clientRequestBytes: requestBytes,
+        clientIP: entry.ClientIP
+      });
+    });
+    
+    res.json({
+      message: '時間分組調試',
+      totalRecords: elkData.hits.length,
+      sampleData: results,
+      groupInterval: `${groupInterval}ms (${groupInterval / (24*60*60*1000)}天)`
+    });
+    
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 新增：攻擊來源統計API
+app.post('/api/attack-source-stats', async (req, res) => {
+  try {
+    const { apiKey, model, dataSource = 'file', timeRange = 'auto' } = req.body;
+    
+    if (!apiKey) {
+      return res.status(400).json({ error: '請先設定 Gemini API Key' });
+    }
+
+    console.log(`📊 開始載入攻擊來源統計 (資料來源: ${dataSource})`);
+    let analysisResult;
+    
+    if (dataSource === 'elk') {
+      analysisResult = await processELKLogs({ apiKey, model, timeRange });
+    } else {
+      analysisResult = await processLogFile({ apiKey, model });
+    }
+
+    // 提取攻擊來源統計資料
+    const attackData = analysisResult.attackData;
+    if (!attackData) {
+      return res.json({
+        topIPs: [],
+        topCountries: [],
+        topURIs: [],
+        topDomains: [],
+        httpStatusStats: [],
+      });
+    }
+
+    // 處理 HTTP 狀態碼統計
+    const globalStats = analysisResult.globalStats || {};
+    const httpStatusStats = globalStats.httpStatusCounts ? 
+      Array.from(globalStats.httpStatusCounts.entries())
+        .map(([status, count]) => ({ status, count }))
+        .sort((a, b) => b.count - a.count)
+      : [];
+
+    res.json({
+      topIPs: attackData.topIPs || [],
+      topCountries: attackData.topCountries || [],
+      topURIs: attackData.topURIs || [],
+      topDomains: attackData.allAttacks || [],
+      httpStatusStats: httpStatusStats,
+      totalRequests: attackData.totalRequests || 0,
+      uniqueIPs: attackData.uniqueIPs || 0
+    });
+
+  } catch (error) {
+    console.error('❌ 攻擊來源統計失敗:', error);
+    res.status(500).json({ 
+      error: '攻擊來源統計失敗', 
+      details: error.message 
+    });
+  }
+});
+
+// ELK 連接預熱（可選）
+async function warmupELKConnection() {
+  try {
+    console.log('🔥 開始 ELK 連接預熱...');
+    
+    // 檢查是否配置了ELK
+    if (!ELK_CONFIG.mcp.serverUrl || ELK_CONFIG.mcp.serverUrl.includes('localhost')) {
+      console.log('⚠️ 跳過 ELK 預熱：未配置生產環境 ELK 服務器');
+      return;
+    }
+    
+    // 嘗試建立連接（不強制要求成功）
+    const connected = await elkMCPClient.testConnection();
+    if (connected) {
+      console.log('✅ ELK 連接預熱成功');
+    } else {
+      console.log('⚠️ ELK 連接預熱失敗，但不影響系統啟動');
+    }
+  } catch (error) {
+    console.log('⚠️ ELK 連接預熱失敗:', error.message);
+    console.log('💡 系統將在首次使用時建立 ELK 連接');
+  }
+}
+
 // 啟動服務
 const port = 8080;
-app.listen(port, () => console.log(`Backend API on http://localhost:${port}`));
+app.listen(port, async () => {
+  console.log(`🚀 Backend API 已啟動: http://localhost:${port}`);
+  console.log('📊 DDoS 攻擊圖表分析系統已就緒');
+  
+  // 異步執行ELK預熱（不阻塞啟動）
+  setTimeout(() => {
+    warmupELKConnection().catch(err => {
+      console.log('ELK預熱過程出錯（可忽略）:', err.message);
+    });
+  }, 1000); // 等待1秒後開始預熱
+});

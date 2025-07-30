@@ -7,6 +7,7 @@ import AlertThresholdConfig from './AlertThresholdConfig';
 import AISettingsConfig from './AISettingsConfig';
 import DataSourceConfig from './DataSourceConfig';
 import DDOSTable from './DDOSTable'; // 假設這個檔案存在
+import AttackTrendComparison from './AttackTrendComparison';
 
 const TabPanel = (props) => {
   const { children, value, index, ...other } = props;
@@ -68,6 +69,7 @@ const DDOSTabbedView = () => {
           <Tab label="攻擊關聯圖" />
           <Tab label="攻擊來源" />
           <Tab label="流量趨勢" />
+          <Tab label="攻擊趨勢對比" />
           <Tab label="資料來源" />
           <Tab label="警報閾值設定" />
           <Tab label="AI分析設定" />
@@ -111,12 +113,15 @@ const DDOSTabbedView = () => {
         <TrafficTrend />
       </TabPanel>
       <TabPanel value={value} index={3}>
-        <DataSourceConfig />
+        <AttackTrendComparison />
       </TabPanel>
       <TabPanel value={value} index={4}>
-        <AlertThresholdConfig />
+        <DataSourceConfig />
       </TabPanel>
       <TabPanel value={value} index={5}>
+        <AlertThresholdConfig />
+      </TabPanel>
+      <TabPanel value={value} index={6}>
         <AISettingsConfig onConfigChange={setAiConfig} />
       </TabPanel>
     </Box>

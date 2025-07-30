@@ -125,7 +125,9 @@ class ElkMCPClient {
             name: toolName,
             arguments: args
           }
-        })
+        }),
+        // 增加超時時間到60秒，適應大數據量查詢
+        signal: AbortSignal.timeout(60000)
       });
       
       if (!response.ok) {
@@ -198,58 +200,91 @@ class ElkMCPClient {
 
   // 連接到 MCP Server
   async connect() {
-    try {
-      console.log(`正在連接 ELK MCP Server (${ELK_CONFIG.mcp.protocol})...`);
-      console.log(`Server URL: ${ELK_CONFIG.mcp.serverUrl}`);
-      
-      let transport;
-      
-      // 根據協議類型建立不同的傳輸方式
-      if (ELK_CONFIG.mcp.protocol === 'proxy') {
-        // 使用 mcp-proxy 橋接 HTTP 到 stdio
-        console.log('使用 mcp-proxy 橋接到 HTTP MCP Server...');
-        transport = new StdioClientTransport({
-          command: ELK_CONFIG.mcp.proxyCommand,
-          args: ELK_CONFIG.mcp.proxyArgs
-        });
-      } else {
-        // 直接 stdio 傳輸
-        transport = new StdioClientTransport({
-          command: ELK_CONFIG.mcp.serverCommand,
-          args: ELK_CONFIG.mcp.serverArgs
-        });
-      }
-
-      // 建立客戶端
-      this.client = new Client({
-        name: "ddos-analyzer",
-        version: "1.0.0"
-      }, {
-        capabilities: {
-          tools: {}
+    const maxRetries = ELK_CONFIG.mcp.retryAttempts || 3;
+    const baseDelay = 1000; // 1秒基礎延遲
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        if (attempt > 0) {
+          const delay = baseDelay * Math.pow(2, attempt - 1); // 指數退避
+          console.log(`🔄 重試連接 (${attempt}/${maxRetries})，等待 ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
         }
-      });
+        
+        console.log(`正在連接 ELK MCP Server (${ELK_CONFIG.mcp.protocol})...`);
+        console.log(`Server URL: ${ELK_CONFIG.mcp.serverUrl}`);
+        
+        // 清理舊連接
+        if (this.client) {
+          try {
+            await this.client.close();
+          } catch (e) {
+            // 忽略清理錯誤
+          }
+          this.client = null;
+        }
+        
+        let transport;
+        
+        // 根據協議類型建立不同的傳輸方式
+        if (ELK_CONFIG.mcp.protocol === 'proxy') {
+          // 使用 mcp-proxy 橋接 HTTP 到 stdio
+          console.log('使用 mcp-proxy 橋接到 HTTP MCP Server...');
+          transport = new StdioClientTransport({
+            command: ELK_CONFIG.mcp.proxyCommand,
+            args: ELK_CONFIG.mcp.proxyArgs
+          });
+        } else {
+          // 直接 stdio 傳輸
+          transport = new StdioClientTransport({
+            command: ELK_CONFIG.mcp.serverCommand,
+            args: ELK_CONFIG.mcp.serverArgs
+          });
+        }
 
-      // 連接到服務器
-      await this.client.connect(transport);
-      this.connected = true;
-      this.retryCount = 0;
-      
-      console.log('✅ ELK MCP Server 連接成功');
-      return true;
-    } catch (error) {
-      console.error('❌ ELK MCP Server 連接失敗:', error.message);
-      this.connected = false;
-      
-      // 重試邏輯
-      if (this.retryCount < ELK_CONFIG.mcp.retryAttempts) {
-        this.retryCount++;
-        console.log(`🔄 重試連接 (${this.retryCount}/${ELK_CONFIG.mcp.retryAttempts})...`);
-        await new Promise(resolve => setTimeout(resolve, 2000 * this.retryCount));
-        return await this.connect();
+        // 建立客戶端
+        this.client = new Client({
+          name: "ddos-analyzer",
+          version: "1.0.0"
+        }, {
+          capabilities: {
+            tools: {}
+          }
+        });
+
+        // 設置連接超時
+        const connectPromise = this.client.connect(transport);
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Connection timeout')), 15000)
+        );
+        
+        // 連接到服務器（帶超時）
+        await Promise.race([connectPromise, timeoutPromise]);
+        
+        // 驗證連接是否真的可用
+        const testResult = await this.quickConnectionTest();
+        if (!testResult) {
+          throw new Error('Connection established but not functional');
+        }
+        
+        this.connected = true;
+        this.retryCount = 0;
+        
+        console.log('✅ ELK MCP Server 連接成功並通過驗證');
+        return true;
+        
+      } catch (error) {
+        console.error(`❌ ELK MCP Server 連接失敗 (嘗試 ${attempt + 1}/${maxRetries + 1}):`, error.message);
+        this.connected = false;
+        this.client = null;
+        
+        // 如果是最後一次嘗試，拋出錯誤
+        if (attempt === maxRetries) {
+          const finalError = new Error(`ELK MCP Server 連接失敗，已重試 ${maxRetries} 次: ${error.message}`);
+          finalError.originalError = error;
+          throw finalError;
+        }
       }
-      
-      throw error;
     }
   }
 
@@ -269,7 +304,55 @@ class ElkMCPClient {
   // 確保連接狀態
   async ensureConnection() {
     if (!this.connected || !this.client) {
+      console.log('🔄 ELK 連接未建立，開始建立連接...');
       await this.connect();
+    } else {
+      // 即使連接狀態顯示已連接，也要驗證連接是否真的可用
+      try {
+        const isWorking = await this.quickConnectionTest();
+        if (!isWorking) {
+          console.log('⚠️ ELK 連接可能已斷開，重新建立連接...');
+          this.connected = false;
+          this.client = null;
+          await this.connect();
+        }
+      } catch (error) {
+        console.log('⚠️ ELK 連接驗證失敗，重新建立連接...', error.message);
+        this.connected = false;
+        this.client = null;
+        await this.connect();
+      }
+    }
+  }
+
+  // 快速連接測試（不會拋出錯誤）
+  async quickConnectionTest() {
+    if (!this.client) {
+      return false;
+    }
+    
+    try {
+      // 執行一個極簡的測試查詢
+      const result = await Promise.race([
+        this.client.callTool({
+          name: 'search',
+          arguments: {
+            index: ELK_CONFIG.elasticsearch.index,
+            query_body: {
+              query: { match_all: {} },
+              size: 1,
+              timeout: '5s'
+            }
+          }
+        }),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Connection test timeout')), 5000)
+        )
+      ]);
+
+      return !result.isError;
+    } catch (error) {
+      return false;
     }
   }
 
@@ -387,7 +470,13 @@ class ElkMCPClient {
 
   // 執行 Elasticsearch 查詢
   async queryElasticsearch(timeRange = '1h', filters = {}) {
-    await this.ensureConnection();
+    try {
+      await this.ensureConnection();
+    } catch (error) {
+      console.log('⚠️ 單例連接失敗，嘗試使用新實例...');
+      // 如果單例連接失敗，使用新實例
+      return await this.queryWithNewInstance(timeRange, filters);
+    }
 
     try {
       const query = this.buildElasticsearchQuery(timeRange, filters);
@@ -565,13 +654,92 @@ class ElkMCPClient {
     return this.connected && this.client;
   }
 
+  // 重置客戶端狀態（解決狀態污染問題）
+  async resetClientState() {
+    console.log('🔄 重置 ELK MCP 客戶端狀態...');
+    
+    // 強制斷開現有連接
+    if (this.client) {
+      try {
+        await this.client.close();
+      } catch (error) {
+        // 忽略關閉錯誤
+      }
+    }
+    
+    // 重置所有狀態
+    this.client = null;
+    this.connected = false;
+    this.retryCount = 0;
+    
+    console.log('✅ 客戶端狀態已重置');
+  }
+
+  // 使用新實例執行查詢（回退機制）
+  async queryWithNewInstance(timeRange = '1h', filters = {}) {
+    console.log('🆕 使用新實例執行 Elasticsearch 查詢...');
+    
+    const newClient = new ElkMCPClient();
+    
+    try {
+      await newClient.connect();
+      
+      const query = newClient.buildElasticsearchQuery(timeRange, filters);
+      
+      console.log('📊 執行 Elasticsearch 查詢（新實例）...');
+      console.log('查詢範圍:', timeRange);
+      console.log('篩選條件:', filters);
+      
+      // 使用新實例執行查詢
+      const result = await newClient.client.callTool({
+        name: 'search',
+        arguments: {
+          index: ELK_CONFIG.elasticsearch.index,
+          query_body: query
+        }
+      });
+
+      if (result.isError) {
+        throw new Error(`Elasticsearch 查詢錯誤: ${result.content[0]?.text || 'Unknown error'}`);
+      }
+
+      // 處理回應（使用與原方法相同的邏輯）
+      const responseText = result.content[0]?.text || '';
+      const dataText = result.content[1]?.text || responseText;
+      
+      let responseData;
+      try {
+        const records = JSON.parse(dataText);
+        if (Array.isArray(records)) {
+          console.log('✅ 解析為記錄陣列，找到', records.length, '筆記錄');
+          responseData = { hits: records };
+        } else {
+          responseData = records;
+        }
+      } catch (parseError) {
+        throw new Error(`回應解析失敗: ${parseError.message}`);
+      }
+
+      console.log('✅ 新實例查詢成功');
+      return responseData;
+      
+    } finally {
+      // 清理新實例
+      await newClient.disconnect();
+    }
+  }
+
   // 測試連接
   async testConnection() {
     try {
-      await this.ensureConnection();
+      // 🔧 使用新實例進行測試（避免單例狀態污染）
+      console.log('🔬 使用新實例測試 ELK MCP 連接...');
+      const testClient = new ElkMCPClient();
+      
+      await testClient.connect();
       
       // 執行簡單的測試查詢
-      const testResult = await this.client.callTool({
+      const testResult = await testClient.client.callTool({
         name: 'search',
         arguments: {
           index: ELK_CONFIG.elasticsearch.index,
@@ -582,7 +750,19 @@ class ElkMCPClient {
         }
       });
 
-      return !testResult.isError;
+      const success = !testResult.isError;
+      
+      // 清理測試實例
+      await testClient.disconnect();
+      
+      if (success) {
+        console.log('✅ ELK MCP 連接測試成功');
+        // 如果測試成功，重置單例狀態並建立新連接
+        await this.resetClientState();
+        await this.ensureConnection();
+      }
+      
+      return success;
     } catch (error) {
       console.error('連接測試失敗:', error.message);
       return false;

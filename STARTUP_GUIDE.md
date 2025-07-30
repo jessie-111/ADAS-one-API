@@ -106,7 +106,7 @@ cd backend
 npm install
 
 # 驗證關鍵依賴安裝
-npm list @google/generative-ai
+
 npm list @modelcontextprotocol/sdk
 npm list express
 ```
@@ -223,6 +223,8 @@ ps aux | grep node
 netstat -an | grep :3000  # 前端
 netstat -an | grep :8080  # 後端
 ```
+程式Server 安裝 mcp proxy 
+uv tool install mcp-proxy
 
 #### 5.3 瀏覽器測試
 1. 開啟瀏覽器訪問：http://localhost:3000
@@ -259,8 +261,7 @@ docker run --rm  -d -e ES_URL=https://your-elasticsearch:9200   -e ES_API_KEY=yo
 新增 //elk api key
     apiKey: process.env.ELK_API_KEY || 'your-elasticsearch1_api_key',
 ```
-程式Server 安裝 mcp proxy 
-uv tool install mcp-proxy
+
 
 ---
 ## 🎯 專案結構說明
