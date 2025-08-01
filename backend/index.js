@@ -1,6 +1,9 @@
 // backend/index.js
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const { body, validationResult } = require('express-validator');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const fs = require('fs');
 const readline = require('readline');
@@ -8,10 +11,56 @@ const { elkMCPClient } = require('./services/elkMCPClient');
 const { ELK_CONFIG, OWASP_REFERENCES, identifyOWASPType } = require('./config/elkConfig');
 const { CLOUDFLARE_FIELD_MAPPING, generateAIFieldReference } = require('../cloudflare-field-mapping');
 const TrendAnalysisService = require('./services/trendAnalysisService');
+const { SECURITY_CONFIG, validateSecurityConfig, isValidApiKey } = require('./config/security');
 
 const app = express();
-app.use(cors());
-app.use(express.json());
+
+// 驗證安全配置
+const securityConfig = validateSecurityConfig();
+
+// 安全中間件
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+    },
+  },
+  crossOriginEmbedderPolicy: false
+}));
+
+// CORS配置
+app.use(cors({
+  origin: securityConfig.app.corsOrigins,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+// 速率限制
+const limiter = rateLimit({
+  windowMs: securityConfig.rateLimit.windowMs,
+  max: securityConfig.rateLimit.max,
+  message: {
+    error: '請求過於頻繁，請稍後再試',
+    retryAfter: Math.ceil(securityConfig.rateLimit.windowMs / 1000)
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+app.use('/api/', limiter);
+
+// JSON解析中間件
+app.use(express.json({ limit: securityConfig.validation.maxRequestSize }));
+
+// 請求日誌中間件
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  next();
+});
 
 // 初始化趨勢分析服務
 const trendAnalysisService = new TrendAnalysisService();
@@ -240,7 +289,7 @@ try {
   // 配置檔案不存在，使用 UI 設定
 }
 
-// 可用的 Gemini 模型
+// 可用的 Gemini 模型 (2.5 系列)
 const AVAILABLE_MODELS = [
   { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
   { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
@@ -307,7 +356,7 @@ app.post('/api/test-ai', async (req, res) => {
   try {
     const { apiKey, model } = req.body;
     const useApiKey = apiKey || config.GEMINI_API_KEY;
-    const useModel = model || config.GEMINI_MODEL || 'gemini-2.5-flash';
+    const useModel = model || config.GEMINI_MODEL || 'gemini-1.5-flash';
 
     if (!useApiKey) {
       return res.status(400).json({ error: '缺少 API Key' });
@@ -685,7 +734,7 @@ function detectAttack(logEntry, unused, detectedAttacks) {
 async function getAIAssessment(requestBody) {
   const { apiKey, model, attackData, healthData, eventData, overallData, fieldReference, owaspReferences } = requestBody;
   const useApiKey = apiKey || config.GEMINI_API_KEY;
-  const useModel = model || config.GEMINI_MODEL || 'gemini-2.5-flash';
+  const useModel = model || config.GEMINI_MODEL || 'gemini-1.5-flash';
 
   if (!useApiKey || (!attackData && !healthData && !eventData && !overallData)) {
     throw new Error('缺少必要參數');
@@ -1133,10 +1182,14 @@ ${attackData.owaspFindings ? formatOWASPFindings(attackData.owaspFindings) : '�
 
 // 處理來自 ELK 的日誌資料
 async function processELKLogs(config) {
-  const { apiKey, model, timeRange } = config;
+  const { apiKey, model, timeRange, startTime, endTime } = config;
   
   try {
-    console.log(`🔍 開始處理 ELK 日誌資料 (時間範圍: ${timeRange})...`);
+    if (startTime && endTime) {
+      console.log(`🔍 開始處理 ELK 日誌資料 (自定義時間範圍: ${startTime} 到 ${endTime})...`);
+    } else {
+      console.log(`🔍 開始處理 ELK 日誌資料 (時間範圍: ${timeRange})...`);
+    }
     
     // 確保ELK連接狀態
     console.log('🔄 確保 ELK MCP 連接狀態...');
@@ -1146,7 +1199,12 @@ async function processELKLogs(config) {
     // 從 ELK 獲取日誌資料
     let elkData;
     try {
-      elkData = await elkMCPClient.queryElasticsearch(timeRange);
+      // 如果有自定義時間範圍，使用自定義查詢方法
+      if (startTime && endTime) {
+        elkData = await elkMCPClient.queryElasticsearchCustomTime(startTime, endTime);
+      } else {
+        elkData = await elkMCPClient.queryElasticsearch(timeRange);
+      }
     } catch (queryError) {
       console.error('❌ ELK 查詢執行失敗:', queryError);
       throw new Error(`ELK 查詢失敗: ${queryError.message}。請檢查 ELK 配置或網路連接。`);
@@ -1180,7 +1238,19 @@ async function processELKLogs(config) {
     console.log(`📊 成功獲取 ${elkData.hits.length} 筆日誌記錄`);
     
     // 轉換 ELK 資料格式為現有處理邏輯可用的格式
-    const logEntries = elkData.hits.map(hit => convertELKToLogEntry(hit.source));
+    const validHits = elkData.hits.filter(hit => hit && hit.source && hit.source["@timestamp"]);
+    console.log(`🔍 過濾後有效記錄數: ${validHits.length}/${elkData.hits.length}`);
+    
+    const logEntries = validHits
+      .map(hit => convertELKToLogEntry(hit.source))
+      .filter(entry => entry !== null); // 過濾掉轉換失敗的記錄
+    
+    console.log(`✅ 成功轉換記錄數: ${logEntries.length}/${validHits.length}`);
+    
+    if (logEntries.length === 0) {
+      console.warn('⚠️ 沒有有效的日誌記錄可供分析');
+      throw new Error('沒有有效的日誌記錄可供分析');
+    }
     
     // 使用現有的統計和攻擊檢測邏輯
     const { globalStats, detectedAttacks } = await analyzeLogEntries(logEntries);
@@ -1282,27 +1352,38 @@ async function processELKLogs(config) {
 
 // 將 ELK 資料轉換為現有日誌格式
 function convertELKToLogEntry(elkRecord) {
-  return {
-    timestamp: elkRecord["@timestamp"],
-    EdgeStartTimestamp: elkRecord["EdgeStartTimestamp"] || elkRecord["@timestamp"], // 使用 EdgeStartTimestamp 或 @timestamp
-    ClientIP: elkRecord["ClientIP"],
-    ClientCountry: elkRecord["ClientCountry"],
-    ClientASN: elkRecord["ClientASN"],
-    EdgeRequestHost: elkRecord["EdgeRequestHost"], // Cloudflare 實際處理的域名
-    ClientRequestHost: elkRecord["ClientRequestHost"], // 客戶端聲稱的域名
-    ClientRequestURI: elkRecord["ClientRequestURI"],
-    EdgeResponseBytes: elkRecord["EdgeResponseBytes"] || 0,
-    ClientRequestBytes: elkRecord["ClientRequestBytes"] || 0, // 新增：客戶端請求位元組數
-    EdgeResponseStatus: elkRecord["EdgeResponseStatus"],
-    SecurityAction: elkRecord["SecurityAction"],
-    SecurityRuleDescription: elkRecord["SecurityRuleDescription"],
-    WAFAttackScore: elkRecord["WAFAttackScore"],
-    WAFSQLiAttackScore: elkRecord["WAFSQLiAttackScore"],
-    WAFXSSAttackScore: elkRecord["WAFXSSAttackScore"],
-    WAFRCEAttackScore: elkRecord["WAFRCEAttackScore"], // 添加 RCE 攻擊分數
-    ClientRequestUserAgent: elkRecord["ClientRequestUserAgent"],
-    RayID: elkRecord["RayID"]
-  };
+  try {
+    // 檢查必要字段是否存在
+    if (!elkRecord || !elkRecord["@timestamp"]) {
+      console.warn('⚠️ ELK記錄缺少必要的@timestamp字段，跳過此記錄');
+      return null;
+    }
+
+    return {
+      timestamp: elkRecord["@timestamp"],
+      EdgeStartTimestamp: elkRecord["EdgeStartTimestamp"] || elkRecord["@timestamp"], // 使用 EdgeStartTimestamp 或 @timestamp
+      ClientIP: elkRecord["ClientIP"] || 'unknown',
+      ClientCountry: elkRecord["ClientCountry"] || 'unknown',
+      ClientASN: elkRecord["ClientASN"] || 'unknown',
+      EdgeRequestHost: elkRecord["EdgeRequestHost"] || '', // Cloudflare 實際處理的域名
+      ClientRequestHost: elkRecord["ClientRequestHost"] || '', // 客戶端聲稱的域名
+      ClientRequestURI: elkRecord["ClientRequestURI"] || '/',
+      EdgeResponseBytes: elkRecord["EdgeResponseBytes"] || 0,
+      ClientRequestBytes: elkRecord["ClientRequestBytes"] || 0, // 新增：客戶端請求位元組數
+      EdgeResponseStatus: elkRecord["EdgeResponseStatus"] || 0,
+      SecurityAction: elkRecord["SecurityAction"] || '',
+      SecurityRuleDescription: elkRecord["SecurityRuleDescription"] || '',
+      WAFAttackScore: elkRecord["WAFAttackScore"] || 0,
+      WAFSQLiAttackScore: elkRecord["WAFSQLiAttackScore"] || 0,
+      WAFXSSAttackScore: elkRecord["WAFXSSAttackScore"] || 0,
+      WAFRCEAttackScore: elkRecord["WAFRCEAttackScore"] || 0, // 添加 RCE 攻擊分數
+      ClientRequestUserAgent: elkRecord["ClientRequestUserAgent"] || '',
+      RayID: elkRecord["RayID"] || ''
+    };
+  } catch (error) {
+    console.error('❌ ELK記錄轉換失敗:', error);
+    return null;
+  }
 }
 
 // 分析日誌條目（重構現有邏輯以支援重用）
@@ -1566,8 +1647,18 @@ app.post('/api/load-trend-comparison', async (req, res) => {
     console.log(`當前時期: ${periods.current.start.toISOString()} - ${periods.current.end.toISOString()}`);
     console.log(`上一時期: ${periods.previous.start.toISOString()} - ${periods.previous.end.toISOString()}`);
 
+    // 進度追蹤回調
+    const progressUpdates = [];
+    const progressCallback = (update) => {
+      progressUpdates.push({
+        ...update,
+        timestamp: new Date().toISOString()
+      });
+      console.log(`📋 查詢進度: ${update.description || update.type} - ${update.batchIndex}/${update.totalBatches}`);
+    };
+
     // 查詢實際ELK資料並分割為兩個時期
-    const allLogData = await queryActualELKData(timeRange);
+    const allLogData = await queryActualELKData(timeRange, 0, progressCallback);
     
     if (allLogData.length === 0) {
       throw new Error('未找到任何日誌資料，請檢查ELK連接或數據範圍');
@@ -1613,15 +1704,38 @@ app.post('/api/load-trend-comparison', async (req, res) => {
       currentPeriod: currentAnalysis,
       previousPeriod: previousAnalysis,
       comparisonChart,
-      statistics
+      statistics,
+      queryInfo: {
+        totalBatches: progressUpdates.length > 0 ? progressUpdates[progressUpdates.length - 1].totalBatches : 1,
+        successfulBatches: progressUpdates.filter(p => p.type === 'batch_complete' && p.success).length,
+        failedBatches: progressUpdates.filter(p => p.type === 'batch_error').length,
+        totalRecords: allLogData.length,
+        queryMethod: progressUpdates.length > 1 ? 'batch' : 'single',
+        progressLog: progressUpdates
+      }
     });
 
   } catch (error) {
     console.error('❌ 趨勢資料載入失敗:', error);
-    res.status(500).json({ 
+    
+    // 提供更詳細的錯誤信息
+    const errorResponse = { 
       error: error.message,
-      details: '趨勢對比資料載入失敗'
-    });
+      details: '趨勢對比資料載入失敗',
+      timeRange: timeRange
+    };
+    
+    // 如果有進度信息，也包含在錯誤響應中
+    if (progressUpdates && progressUpdates.length > 0) {
+      errorResponse.queryInfo = {
+        totalBatches: progressUpdates[progressUpdates.length - 1]?.totalBatches || 0,
+        completedBatches: progressUpdates.filter(p => p.type === 'batch_complete').length,
+        failedBatches: progressUpdates.filter(p => p.type === 'batch_error').length,
+        progressLog: progressUpdates
+      };
+    }
+    
+    res.status(500).json(errorResponse);
   }
 });
 
@@ -1676,86 +1790,388 @@ app.post('/api/analyze-attack-trends', async (req, res) => {
   }
 });
 
-// 查詢實際ELK資料（基於現有數據範圍）
-async function queryActualELKData(timeRange, retryCount = 0) {
-  const maxRetries = 2;
+// === 分批查詢策略實施 ===
+
+// 智能時間分割函數
+function splitTimeRangeForBatchQuery(timeRange) {
+  const strategies = {
+    '1h': { batchSize: '30m', maxBatches: 2 },
+    '6h': { batchSize: '2h', maxBatches: 3 },
+    '1d': { batchSize: '6h', maxBatches: 4 },
+    '3d': { batchSize: '1d', maxBatches: 3 },
+    '7d': { batchSize: '1d', maxBatches: 7 },
+    '30d': { batchSize: '3d', maxBatches: 10 }
+  };
+
+  const strategy = strategies[timeRange] || { batchSize: '1d', maxBatches: 3 };
   
-  try {
-    console.log(`🔍 查詢實際ELK資料 (範圍: ${timeRange}, 嘗試: ${retryCount + 1}/${maxRetries + 1})...`);
+  console.log(`📊 時間分割策略: ${timeRange} → ${strategy.maxBatches}個 ${strategy.batchSize} 批次`);
+  
+  return strategy;
+}
+
+// 計算時間範圍的毫秒數
+function parseTimeRangeToMs(timeRange) {
+  const unit = timeRange.slice(-1);
+  const value = parseInt(timeRange.slice(0, -1));
+  
+  const multipliers = {
+    'm': 60 * 1000,
+    'h': 60 * 60 * 1000,
+    'd': 24 * 60 * 60 * 1000
+  };
+  
+  return value * (multipliers[unit] || multipliers['h']);
+}
+
+// 生成分批時間段
+function generateTimeBatches(timeRange) {
+  const strategy = splitTimeRangeForBatchQuery(timeRange);
+  const now = new Date();
+  const totalMs = parseTimeRangeToMs(timeRange);
+  const batchMs = parseTimeRangeToMs(strategy.batchSize);
+  
+  const batches = [];
+  let currentEnd = now;
+  
+  for (let i = 0; i < strategy.maxBatches; i++) {
+    const currentStart = new Date(currentEnd.getTime() - batchMs);
     
-    // 使用現有的elkMCPClient查詢，它會自動查詢最新可用數據
-    // 根據時間範圍調整查詢大小，確保有足夠數據進行對比
-    let querySize = getQuerySizeByTimeRange(timeRange);
-    
-    // 如果是重試，降低查詢大小
-    if (retryCount > 0) {
-      querySize = Math.floor(querySize * 0.7); // 減少30%
-      console.log(`🔄 重試查詢，降低查詢大小至: ${querySize}`);
+    // 確保不超過總時間範圍
+    if (now.getTime() - currentStart.getTime() > totalMs) {
+      const adjustedStart = new Date(now.getTime() - totalMs);
+      if (adjustedStart.getTime() < currentEnd.getTime()) {
+        batches.push({
+          start: adjustedStart,
+          end: currentEnd,
+          batchIndex: i + 1,
+          totalBatches: strategy.maxBatches,
+          description: `批次 ${i + 1}/${strategy.maxBatches}`
+        });
+      }
+      break;
     }
     
-    // 臨時修改ELK查詢大小
-    const originalQuery = elkMCPClient.buildElasticsearchQuery;
-    elkMCPClient.buildElasticsearchQuery = function(range, filters) {
-      const query = originalQuery.call(this, range, filters);
-      query.size = querySize; // 調整查詢數量
-      return query;
-    };
+    batches.push({
+      start: currentStart,
+      end: currentEnd,
+      batchIndex: i + 1,
+      totalBatches: strategy.maxBatches,
+      description: `批次 ${i + 1}/${strategy.maxBatches}`
+    });
     
-    const elkData = await elkMCPClient.queryElasticsearch('auto');
+    currentEnd = currentStart;
+  }
+  
+  // 反轉順序，從最早的時間開始
+  batches.reverse();
+  batches.forEach((batch, index) => {
+    batch.batchIndex = index + 1;
+    batch.description = `批次 ${index + 1}/${batches.length}`;
+  });
+  
+  return batches;
+}
+
+// 分批查詢ELK數據
+async function queryELKDataInBatches(timeRange, progressCallback = null) {
+  console.log(`🚀 開始分批查詢 ELK 數據 (時間範圍: ${timeRange})`);
+  
+  // 檢查是否需要分批查詢
+  const shouldUseBatch = ['3d', '7d', '30d'].includes(timeRange);
+  
+  if (!shouldUseBatch) {
+    console.log(`📝 時間範圍 ${timeRange} 無需分批，使用原始查詢`);
+    return await querySingleBatch(timeRange, 1, 1, progressCallback);
+  }
+  
+  const batches = generateTimeBatches(timeRange);
+  const allResults = [];
+  let successCount = 0;
+  let partialFailures = [];
+  
+  console.log(`📋 生成 ${batches.length} 個查詢批次:`);
+  batches.forEach(batch => {
+    console.log(`  ${batch.description}: ${batch.start.toISOString()} - ${batch.end.toISOString()}`);
+  });
+  
+  for (const batch of batches) {
+    try {
+      if (progressCallback) {
+        progressCallback({
+          type: 'batch_start',
+          batchIndex: batch.batchIndex,
+          totalBatches: batch.totalBatches,
+          description: batch.description,
+          timeRange: `${batch.start.toISOString()} - ${batch.end.toISOString()}`
+        });
+      }
+      
+      console.log(`🔍 執行 ${batch.description} 查詢...`);
+      console.log(`   時間範圍: ${batch.start.toISOString()} - ${batch.end.toISOString()}`);
+      
+      const batchResult = await queryCustomTimeRangeBatch(batch.start, batch.end, batch.batchIndex, batch.totalBatches);
+      
+      if (batchResult && batchResult.length > 0) {
+        allResults.push(...batchResult);
+        successCount++;
+        console.log(`✅ ${batch.description} 查詢成功，獲得 ${batchResult.length} 筆記錄`);
+      } else {
+        console.log(`⚠️ ${batch.description} 查詢無數據`);
+      }
+      
+      if (progressCallback) {
+        progressCallback({
+          type: 'batch_complete',
+          batchIndex: batch.batchIndex,
+          totalBatches: batch.totalBatches,
+          recordCount: batchResult ? batchResult.length : 0,
+          success: true
+        });
+      }
+      
+    } catch (error) {
+      console.error(`❌ ${batch.description} 查詢失敗:`, error.message);
+      partialFailures.push({
+        batch: batch.description,
+        error: error.message,
+        timeRange: `${batch.start.toISOString()} - ${batch.end.toISOString()}`
+      });
+      
+      if (progressCallback) {
+        progressCallback({
+          type: 'batch_error',
+          batchIndex: batch.batchIndex,
+          totalBatches: batch.totalBatches,
+          error: error.message
+        });
+      }
+      
+      // 如果是超時錯誤，繼續嘗試其他批次
+      if (error.message.includes('timeout') || error.message.includes('timed out')) {
+        console.log(`⏭️ 跳過超時的批次，繼續處理剩餘批次...`);
+        continue;
+      }
+      
+      // 其他錯誤也繼續嘗試
+      console.log(`⏭️ 跳過失敗的批次，繼續處理剩餘批次...`);
+    }
     
-    // 恢復原始查詢方法
-    elkMCPClient.buildElasticsearchQuery = originalQuery;
+    // 批次間加入短暫延遲，避免過度負載
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+  
+  // 結果統計
+  console.log(`📊 分批查詢完成統計:`);
+  console.log(`   成功批次: ${successCount}/${batches.length}`);
+  console.log(`   總記錄數: ${allResults.length}`);
+  console.log(`   失敗批次: ${partialFailures.length}`);
+  
+  if (partialFailures.length > 0) {
+    console.log(`⚠️ 部分批次查詢失敗:`);
+    partialFailures.forEach(failure => {
+      console.log(`   - ${failure.batch}: ${failure.error}`);
+    });
+  }
+  
+  // 按時間排序合併結果
+  if (allResults.length > 0) {
+    allResults.sort((a, b) => 
+      new Date(a.EdgeStartTimestamp || a.timestamp) - new Date(b.EdgeStartTimestamp || b.timestamp)
+    );
+    console.log(`✅ 數據合併完成，時間範圍: ${allResults[0]?.EdgeStartTimestamp} - ${allResults[allResults.length-1]?.EdgeStartTimestamp}`);
+  }
+  
+  // 如果完全沒有數據，拋出錯誤
+  if (allResults.length === 0) {
+    const errorMsg = partialFailures.length > 0 
+      ? `所有批次查詢失敗。主要錯誤: ${partialFailures[0].error}`
+      : '未找到任何數據';
+    throw new Error(errorMsg);
+  }
+  
+  // 如果部分失敗但有數據，記錄警告
+  if (partialFailures.length > 0 && allResults.length > 0) {
+    console.log(`⚠️ 注意：部分數據缺失，但已獲得 ${allResults.length} 筆有效記錄進行分析`);
+  }
+  
+  return allResults;
+}
+
+// 查詢單個時間批次
+async function queryCustomTimeRangeBatch(startTime, endTime, batchIndex, totalBatches) {
+  try {
+    console.log(`🔍 查詢批次 ${batchIndex}/${totalBatches}: ${startTime.toISOString()} - ${endTime.toISOString()}`);
+    
+    // 計算批次時間範圍以優化查詢大小
+    const timeDiff = endTime.getTime() - startTime.getTime();
+    const hours = timeDiff / (1000 * 60 * 60);
+    let batchSizeKey = '1d';
+    
+    if (hours <= 0.5) batchSizeKey = '30m';
+    else if (hours <= 1) batchSizeKey = '1h';
+    else if (hours <= 2) batchSizeKey = '2h';
+    else if (hours <= 6) batchSizeKey = '6h';
+    else if (hours <= 24) batchSizeKey = '1d';
+    else batchSizeKey = '3d';
+    
+    const querySize = getBatchQuerySizeByTimeRange(batchSizeKey);
+    console.log(`📏 批次 ${batchIndex} 時間跨度: ${hours.toFixed(1)}小時，查詢大小: ${querySize}`);
+    
+    // 使用自定義時間範圍查詢
+    const elkData = await elkMCPClient.queryElasticsearchCustomTime(
+      startTime.toISOString(),
+      endTime.toISOString(),
+      {} // 目前使用預設查詢大小，未來可以優化
+    );
     
     if (!elkData.hits || elkData.hits.length === 0) {
+      console.log(`📭 批次 ${batchIndex} 無數據`);
+      return [];
+    }
+    
+    console.log(`📊 批次 ${batchIndex} 獲得 ${elkData.hits.length} 筆原始記錄`);
+    
+    // 轉換數據格式
+    const validHits = elkData.hits.filter(hit => hit && hit.source && hit.source["@timestamp"]);
+    const logEntries = validHits
+      .map(hit => convertELKToLogEntry(hit.source))
+      .filter(entry => entry !== null);
+    
+    console.log(`✅ 批次 ${batchIndex} 成功轉換 ${logEntries.length} 筆有效記錄`);
+    
+    return logEntries;
+    
+  } catch (error) {
+    console.error(`❌ 批次 ${batchIndex} 查詢失敗:`, error.message);
+    
+    // 增強錯誤處理：提供具體的錯誤分類
+    if (error.message.includes('timeout') || error.message.includes('timed out')) {
+      throw new Error(`批次 ${batchIndex} 查詢超時，建議縮小時間範圍`);
+    }
+    
+    if (error.message.includes('Connection') || error.message.includes('MCP')) {
+      throw new Error(`批次 ${batchIndex} 連接失敗，請檢查ELK服務狀態`);
+    }
+    
+    throw new Error(`批次 ${batchIndex} 查詢失敗: ${error.message}`);
+  }
+}
+
+// 單批次查詢（用於小時間範圍）
+async function querySingleBatch(timeRange, batchIndex, totalBatches, progressCallback = null) {
+  try {
+    if (progressCallback) {
+      progressCallback({
+        type: 'batch_start',
+        batchIndex,
+        totalBatches,
+        description: `單次查詢 ${timeRange}`,
+        timeRange: timeRange
+      });
+    }
+    
+    const elkData = await elkMCPClient.queryElasticsearch(timeRange);
+    
+    if (!elkData.hits || elkData.hits.length === 0) {
+      if (progressCallback) {
+        progressCallback({
+          type: 'batch_complete',
+          batchIndex,
+          totalBatches,
+          recordCount: 0,
+          success: true
+        });
+      }
+      return [];
+    }
+    
+    const validHits = elkData.hits.filter(hit => hit && hit.source && hit.source["@timestamp"]);
+    const logEntries = validHits
+      .map(hit => convertELKToLogEntry(hit.source))
+      .filter(entry => entry !== null);
+    
+    if (progressCallback) {
+      progressCallback({
+        type: 'batch_complete',
+        batchIndex,
+        totalBatches,
+        recordCount: logEntries.length,
+        success: true
+      });
+    }
+    
+    return logEntries;
+    
+  } catch (error) {
+    if (progressCallback) {
+      progressCallback({
+        type: 'batch_error',
+        batchIndex,
+        totalBatches,
+        error: error.message
+      });
+    }
+    throw error;
+  }
+}
+
+// 查詢實際ELK資料（基於現有數據範圍）- 使用分批策略
+async function queryActualELKData(timeRange, retryCount = 0, progressCallback = null) {
+  console.log(`🔍 查詢實際ELK資料 (範圍: ${timeRange}, 嘗試: ${retryCount + 1})...`);
+  
+  try {
+    // 使用新的分批查詢策略
+    const logEntries = await queryELKDataInBatches(timeRange, progressCallback);
+    
+    if (!logEntries || logEntries.length === 0) {
       console.log('⚠️ 未找到ELK日誌資料');
       return [];
     }
     
-    console.log(`📊 成功獲取 ${elkData.hits.length} 筆實際日誌記錄`);
-    
-    // 轉換ELK資料格式
-    const logEntries = elkData.hits.map(hit => convertELKToLogEntry(hit.source));
-    
-    // 按時間排序（最舊到最新）
-    logEntries.sort((a, b) => 
-      new Date(a.EdgeStartTimestamp || a.timestamp) - new Date(b.EdgeStartTimestamp || b.timestamp)
-    );
-    
-    console.log(`✅ 數據時間範圍: ${logEntries[0]?.EdgeStartTimestamp} - ${logEntries[logEntries.length-1]?.EdgeStartTimestamp}`);
+    console.log(`✅ 分批查詢完成，總共獲得 ${logEntries.length} 筆記錄`);
+    console.log(`📅 數據時間範圍: ${logEntries[0]?.EdgeStartTimestamp} - ${logEntries[logEntries.length-1]?.EdgeStartTimestamp}`);
     
     return logEntries;
     
   } catch (error) {
     console.error(`❌ 查詢實際ELK資料失敗 (嘗試 ${retryCount + 1}):`, error.message);
     
-    // 如果是超時錯誤且還有重試機會，進行重試
-    if ((error.message.includes('timeout') || error.message.includes('timed out')) && retryCount < maxRetries) {
-      console.log(`⏳ 檢測到超時錯誤，${2}秒後重試...`);
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      return queryActualELKData(timeRange, retryCount + 1);
+    // 如果是部分數據錯誤但有結果，嘗試降級處理
+    if (error.message.includes('部分數據缺失') && retryCount === 0) {
+      console.log('⚠️ 檢測到部分數據缺失，但可能仍有可用數據，繼續處理...');
+      // 這種情況下，分批查詢函數會返回可用的數據
+      // 所以這個錯誤可能不會到達這裡，但保留作為安全網
     }
     
-    // 提供更友好的錯誤信息
+    // 對於超時錯誤，提供更友好的建議
     if (error.message.includes('timeout') || error.message.includes('timed out')) {
-      throw new Error(`查詢超時：${timeRange} 範圍的數據量過大，請嘗試較小的時間範圍（如1天或3天）`);
+      const suggestion = timeRange === '30d' 
+        ? '請嘗試7天範圍' 
+        : timeRange === '7d' 
+        ? '請嘗試3天範圍' 
+        : '請嘗試1天範圍';
+      
+      throw new Error(`查詢超時：${timeRange} 範圍仍然過大。${suggestion}，或稍後再試。`);
     }
     
-    throw error;
+    // 對於其他錯誤，提供具體的解決建議
+    throw new Error(`數據查詢失敗：${error.message}。建議檢查ELK連接或嘗試較小的時間範圍。`);
   }
 }
 
-// 根據時間範圍獲取查詢大小
-function getQuerySizeByTimeRange(timeRange) {
+// 根據時間範圍獲取單批次查詢大小（優化後的分批策略）
+function getBatchQuerySizeByTimeRange(batchSize) {
   const sizeMap = {
-    '1h': 2000,
-    '6h': 3000,
-    '1d': 4000,
-    '3d': 5000,
-    '7d': 6000,  // 降低7天查詢大小，避免超時
-    '30d': 8000  // 降低30天查詢大小
+    '30m': 1500,  // 30分鐘批次
+    '1h': 2000,   // 1小時批次
+    '2h': 2500,   // 2小時批次
+    '6h': 3000,   // 6小時批次
+    '1d': 3500,   // 1天批次
+    '3d': 4000    // 3天批次（最大批次）
   };
-  console.log(`📊 時間範圍 ${timeRange} 對應查詢大小: ${sizeMap[timeRange] || 6000}`);
-  return sizeMap[timeRange] || 6000;
+  console.log(`📊 批次大小 ${batchSize} 對應查詢大小: ${sizeMap[batchSize] || 3000}`);
+  return sizeMap[batchSize] || 3000;
 }
 
 // 計算實際時間範圍
@@ -1930,22 +2346,89 @@ app.get('/api/debug/time-grouping', async (req, res) => {
   }
 });
 
-// 新增：攻擊來源統計API
-app.post('/api/attack-source-stats', async (req, res) => {
+// 輸入驗證中間件
+const validateTimeRange = [
+  body('dataSource').optional().isIn(['file', 'elk']).withMessage('資料來源必須是file或elk'),
+  body('timeRange').optional().matches(/^(\d+[mhd]|auto)$/).withMessage('時間範圍格式不正確'),
+  body('startTime').optional().isISO8601().withMessage('開始時間格式不正確'),
+  body('endTime').optional().isISO8601().withMessage('結束時間格式不正確'),
+];
+
+// 新增：攻擊來源統計API (安全版本)
+app.post('/api/attack-source-stats', validateTimeRange, async (req, res) => {
   try {
-    const { apiKey, model, dataSource = 'file', timeRange = 'auto' } = req.body;
+    // 驗證輸入
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ 
+        error: '輸入驗證失敗', 
+        details: errors.array().map(err => err.msg)
+      });
+    }
+
+    const { model, dataSource = 'file', timeRange = 'auto', startTime, endTime, apiKey: clientApiKey } = req.body;
     
-    if (!apiKey) {
-      return res.status(400).json({ error: '請先設定 Gemini API Key' });
+    // 使用後端環境變數中的API Key，如果無效則回退到客戶端提供的API Key（臨時方案）
+    let apiKey = securityConfig.gemini.apiKey;
+    let usingClientKey = false;
+    
+    if (!isValidApiKey(apiKey)) {
+      console.warn('⚠️  後端API Key無效，嘗試使用客戶端提供的API Key（臨時方案）');
+      apiKey = clientApiKey;
+      usingClientKey = true;
+      
+      if (!isValidApiKey(apiKey)) {
+        console.error('❌ 沒有有效的API Key可用');
+        return res.status(400).json({ 
+          error: 'API Key設置錯誤', 
+          hint: '請設置後端環境變數GEMINI_API_KEY，或在前端AI設定中輸入API Key' 
+        });
+      }
+    }
+    
+    if (usingClientKey) {
+      console.log('🔑 使用客戶端提供的API Key（建議設置後端環境變數以提高安全性）');
     }
 
     console.log(`📊 開始載入攻擊來源統計 (資料來源: ${dataSource})`);
+    
+    // 驗證時間範圍
+    if (startTime && endTime) {
+      const start = new Date(startTime);
+      const end = new Date(endTime);
+      const diffHours = (end - start) / (1000 * 60 * 60);
+      
+      if (diffHours <= 0) {
+        return res.status(400).json({ error: '結束時間必須晚於開始時間' });
+      }
+      
+      if (diffHours > securityConfig.validation.maxTimeRangeHours) {
+        return res.status(400).json({ 
+          error: `時間範圍不能超過${securityConfig.validation.maxTimeRangeHours}小時` 
+        });
+      }
+      
+      console.log(`🕐 使用自定義時間範圍: ${startTime} 到 ${endTime} (${diffHours.toFixed(1)}小時)`);
+    } else {
+      console.log(`🕐 使用預設時間範圍: ${timeRange}`);
+    }
+    
     let analysisResult;
     
     if (dataSource === 'elk') {
-      analysisResult = await processELKLogs({ apiKey, model, timeRange });
+      // 傳遞安全的配置到processELKLogs
+      analysisResult = await processELKLogs({ 
+        apiKey, 
+        model: model || securityConfig.gemini.model, 
+        timeRange, 
+        startTime, 
+        endTime 
+      });
     } else {
-      analysisResult = await processLogFile({ apiKey, model });
+      analysisResult = await processLogFile({ 
+        apiKey, 
+        model: model || securityConfig.gemini.model 
+      });
     }
 
     // 提取攻擊來源統計資料

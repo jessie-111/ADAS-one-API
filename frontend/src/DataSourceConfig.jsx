@@ -3,11 +3,6 @@ import {
   Card,
   CardContent,
   Typography,
-  FormControl,
-  FormLabel,
-  RadioGroup,
-  FormControlLabel,
-  Radio,
   TextField,
   Button,
   Alert,
@@ -15,12 +10,9 @@ import {
   Chip,
   CircularProgress
 } from '@mui/material';
-import { CloudUpload, Storage, CheckCircle, Error } from '@mui/icons-material';
+import { Storage, CheckCircle, Error } from '@mui/icons-material';
 
 const DataSourceConfig = () => {
-  const [dataSource, setDataSource] = useState(() => {
-    return localStorage.getItem('data_source') || 'file';
-  });
   const [timeRange, setTimeRange] = useState(() => {
     return localStorage.getItem('elk_time_range') || 'auto';
   });
@@ -29,12 +21,13 @@ const DataSourceConfig = () => {
 
   // 儲存設定到 localStorage
   useEffect(() => {
-    localStorage.setItem('data_source', dataSource);
-  }, [dataSource]);
-
-  useEffect(() => {
     localStorage.setItem('elk_time_range', timeRange);
   }, [timeRange]);
+
+  // 設定數據源為ELK
+  useEffect(() => {
+    localStorage.setItem('data_source', 'elk');
+  }, []);
 
   // 測試 ELK 連接
   const testElkConnection = async () => {
@@ -59,12 +52,10 @@ const DataSourceConfig = () => {
     }
   };
 
-  // 自動測試連接（當選擇 ELK 時）
+  // 自動測試連接
   useEffect(() => {
-    if (dataSource === 'elk') {
-      testElkConnection();
-    }
-  }, [dataSource]);
+    testElkConnection();
+  }, []);
 
   const getConnectionStatusChip = () => {
     switch (elkConnectionStatus) {
@@ -117,102 +108,70 @@ const DataSourceConfig = () => {
           📊 資料來源配置
         </Typography>
         
-        <FormControl component="fieldset" sx={{ mb: 3 }}>
-          <FormLabel component="legend">選擇資料來源</FormLabel>
-          <RadioGroup
-            value={dataSource}
-            onChange={(e) => setDataSource(e.target.value)}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
+          <Storage fontSize="medium" />
+          <Typography variant="body1">
+            ELK Stack (Elasticsearch)
+          </Typography>
+          {getConnectionStatusChip()}
+        </Box>
+
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+          <TextField
+            select
+            label="時間範圍"
+            value={timeRange}
+            onChange={(e) => setTimeRange(e.target.value)}
+            SelectProps={{
+              native: true,
+            }}
+            size="small"
+            sx={{ minWidth: 120 }}
           >
-            <FormControlLabel
-              value="file"
-              control={<Radio />}
-              label={
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <CloudUpload fontSize="small" />
-                  <span>本地檔案 (CF-http_log.txt)</span>
-                </Box>
-              }
-            />
-            <FormControlLabel
-              value="elk"
-              control={<Radio />}
-              label={
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Storage fontSize="small" />
-                  <span>ELK Stack (Elasticsearch)</span>
-                  {dataSource === 'elk' && getConnectionStatusChip()}
-                </Box>
-              }
-            />
-          </RadioGroup>
-        </FormControl>
+            {timeRangeOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </TextField>
+          
+          <Button
+            variant="outlined"
+            onClick={testElkConnection}
+            disabled={testing}
+            startIcon={testing ? <CircularProgress size={16} /> : null}
+          >
+            {testing ? '測試中...' : '測試連接'}
+          </Button>
+        </Box>
 
-        {dataSource === 'elk' && (
-          <Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-              <TextField
-                select
-                label="時間範圍"
-                value={timeRange}
-                onChange={(e) => setTimeRange(e.target.value)}
-                SelectProps={{
-                  native: true,
-                }}
-                size="small"
-                sx={{ minWidth: 120 }}
-              >
-                {timeRangeOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </TextField>
-              
-              <Button
-                variant="outlined"
-                onClick={testElkConnection}
-                disabled={testing}
-                startIcon={testing ? <CircularProgress size={16} /> : null}
-              >
-                {testing ? '測試中...' : '測試連接'}
-              </Button>
-            </Box>
-
-            {elkConnectionStatus === 'connected' && (
-              <Alert severity="success" sx={{ mb: 2 }}>
-                ✅ ELK MCP Server 連接正常，可以開始分析！
-              </Alert>
-            )}
-
-            {(elkConnectionStatus === 'disconnected' || elkConnectionStatus === 'error') && (
-              <Alert severity="error" sx={{ mb: 2 }}>
-                ❌ ELK MCP Server 連接失敗。請確認：
-                <ul style={{ margin: '8px 0', paddingLeft: '20px' }}>
-                  <li>Docker 是否正在運行</li>
-                  <li>Elasticsearch MCP Server 容器是否啟動</li>
-                  <li>網路連接是否正常</li>
-                  <li>ELK API Key 是否已正確設定</li>
-                </ul>
-              </Alert>
-            )}
-
-            <Alert severity="info">
-              <strong>ELK 整合功能：</strong>
-              <ul style={{ margin: '8px 0', paddingLeft: '20px' }}>
-                <li>🔍 直接從 Elasticsearch 查詢 Cloudflare 日誌</li>
-                <li>📋 使用完整的欄位對應表進行智能分析</li>
-                <li>🛡️ 整合 OWASP Top 10 威脅分類</li>
-                <li>📊 支援即時統計和聚合查詢</li>
-              </ul>
-            </Alert>
-          </Box>
-        )}
-
-        {dataSource === 'file' && (
-          <Alert severity="info">
-            📁 使用本地檔案模式，將分析 <code>CF-http_log.txt</code> 檔案中的日誌資料。
+        {elkConnectionStatus === 'connected' && (
+          <Alert severity="success" sx={{ mb: 2 }}>
+            ✅ ELK MCP Server 連接正常，可以開始分析！
           </Alert>
         )}
+
+        {(elkConnectionStatus === 'disconnected' || elkConnectionStatus === 'error') && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            ❌ ELK MCP Server 連接失敗。請確認：
+            <ul style={{ margin: '8px 0', paddingLeft: '20px' }}>
+              <li>Docker 是否正在運行</li>
+              <li>Elasticsearch MCP Server 容器是否啟動</li>
+              <li>網路連接是否正常</li>
+              <li>ELK API Key 是否已正確設定</li>
+            </ul>
+          </Alert>
+        )}
+
+        <Alert severity="info">
+          <strong>ELK 整合功能：</strong>
+          <ul style={{ margin: '8px 0', paddingLeft: '20px' }}>
+            <li>🔍 直接從 Elasticsearch 查詢 Cloudflare 日誌</li>
+            <li>📋 使用完整的欄位對應表進行智能分析</li>
+            <li>🛡️ 整合 OWASP Top 10 威脅分類</li>
+            <li>📊 支援即時統計和聚合查詢</li>
+          </ul>
+        </Alert>
       </CardContent>
     </Card>
   );

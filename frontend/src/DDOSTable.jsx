@@ -66,15 +66,11 @@ const DDOSTable = () => {
       setLoading(true);
       setError('');
       
-      // 獲取 AI 配置
-      const apiKey = localStorage.getItem('gemini_api_key');
+      // 獲取配置 (包含API Key作為回退方案)
+      const apiKey = localStorage.getItem('gemini_api_key'); // 回退方案
       const model = localStorage.getItem('gemini_model') || 'gemini-2.5-flash';
       const dataSource = localStorage.getItem('data_source') || 'file';
       const timeRange = localStorage.getItem('elk_time_range') || 'auto';
-
-      if (!apiKey) {
-        throw new Error('請先在 AI 分析設定頁面設定 Gemini API Key');
-      }
 
       // 如果使用ELK資料來源，先檢查連接狀態
       if (dataSource === 'elk') {
@@ -98,7 +94,7 @@ const DDOSTable = () => {
         console.log('✅ ELK 連接狀態正常');
       }
 
-      // 使用專門的攻擊來源統計API
+      // 使用專門的攻擊來源統計API (包含回退方案)
       const response = await fetch('http://localhost:8080/api/attack-source-stats', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

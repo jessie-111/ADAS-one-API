@@ -9,11 +9,17 @@ import {
   Button,
   Alert,
   AlertTitle,
-  CircularProgress
+  CircularProgress,
+  LinearProgress,
+  Chip,
+  Paper
 } from '@mui/material';
 import {
   Timeline,
-  Psychology
+  Psychology,
+  CheckCircle,
+  Error,
+  Schedule
 } from '@mui/icons-material';
 import TrafficComparisonChart from './TrafficComparisonChart';
 import TrendStatsCards from './TrendStatsCards';
@@ -29,6 +35,16 @@ function AttackTrendComparison() {
     isLoading: false,
     isComplete: false,
     error: null
+  });
+
+  // 分批查詢進度狀態
+  const [queryProgress, setQueryProgress] = useState({
+    totalBatches: 0,
+    completedBatches: 0,
+    currentBatch: 0,
+    failedBatches: 0,
+    method: 'single', // 'single' 或 'batch'
+    details: []
   });
   
   // AI分析狀態管理
@@ -52,6 +68,16 @@ function AttackTrendComparison() {
   const handleLoadTrendData = async () => {
     setLoadingState({ isLoading: true, isComplete: false, error: null });
     
+    // 重置進度狀態
+    setQueryProgress({
+      totalBatches: 0,
+      completedBatches: 0,
+      currentBatch: 0,
+      failedBatches: 0,
+      method: 'single',
+      details: []
+    });
+    
     try {
       console.log(`🔍 載入 ${timeRange} 趨勢對比資料...`);
       
@@ -65,12 +91,37 @@ function AttackTrendComparison() {
 
       if (!response.ok) {
         const errorData = await response.json();
+        
+        // 如果有查詢進度信息，也要顯示
+        if (errorData.queryInfo) {
+          setQueryProgress({
+            totalBatches: errorData.queryInfo.totalBatches || 0,
+            completedBatches: errorData.queryInfo.completedBatches || 0,
+            currentBatch: 0,
+            failedBatches: errorData.queryInfo.failedBatches || 0,
+            method: errorData.queryInfo.totalBatches > 1 ? 'batch' : 'single',
+            details: errorData.queryInfo.progressLog || []
+          });
+        }
+        
         throw new Error(errorData.error || `載入失敗: ${response.status}`);
       }
 
       const result = await response.json();
       
       console.log('✅ 趨勢資料載入成功:', result);
+      
+      // 處理查詢進度信息
+      if (result.queryInfo) {
+        setQueryProgress({
+          totalBatches: result.queryInfo.totalBatches || 1,
+          completedBatches: result.queryInfo.successfulBatches || 1,
+          currentBatch: result.queryInfo.totalBatches || 1,
+          failedBatches: result.queryInfo.failedBatches || 0,
+          method: result.queryInfo.queryMethod || 'single',
+          details: result.queryInfo.progressLog || []
+        });
+      }
       
       setTrendData(result);
       setLoadingState({ isLoading: false, isComplete: true, error: null });
@@ -237,6 +288,90 @@ function AttackTrendComparison() {
           <AlertTitle>載入失敗</AlertTitle>
           {loadingState.error}
         </Alert>
+      )}
+
+      {/* 查詢進度顯示 */}
+      {(loadingState.isLoading || queryProgress.totalBatches > 0) && (
+        <Paper sx={{ 
+          p: 3, 
+          mb: 3, 
+          backgroundColor: '#1a1b2d', 
+          border: '1px solid #2a2d42',
+          borderRadius: 2 
+        }}>
+          <Typography variant="h6" gutterBottom sx={{ color: '#49cfff', display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Schedule />
+            查詢進度 {queryProgress.method === 'batch' ? '(分批查詢)' : '(單次查詢)'}
+          </Typography>
+          
+          {queryProgress.totalBatches > 1 && (
+            <>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                <Typography variant="body2" sx={{ color: '#b5b8c6', minWidth: 100 }}>
+                  批次進度:
+                </Typography>
+                <Box sx={{ flexGrow: 1 }}>
+                  <LinearProgress 
+                    variant="determinate" 
+                    value={queryProgress.totalBatches > 0 ? (queryProgress.completedBatches / queryProgress.totalBatches) * 100 : 0}
+                    sx={{
+                      height: 8,
+                      borderRadius: 4,
+                      backgroundColor: '#2a2d42',
+                      '& .MuiLinearProgress-bar': {
+                        backgroundColor: queryProgress.failedBatches > 0 ? '#ff9800' : '#49cfff'
+                      }
+                    }}
+                  />
+                </Box>
+                <Typography variant="body2" sx={{ color: '#fff', minWidth: 80 }}>
+                  {queryProgress.completedBatches}/{queryProgress.totalBatches}
+                </Typography>
+              </Box>
+              
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 2 }}>
+                <Chip 
+                  icon={<CheckCircle />} 
+                  label={`成功: ${queryProgress.completedBatches}`}
+                  size="small"
+                  sx={{ 
+                    backgroundColor: '#4caf50', 
+                    color: '#fff',
+                    '& .MuiChip-icon': { color: '#fff' }
+                  }}
+                />
+                {queryProgress.failedBatches > 0 && (
+                  <Chip 
+                    icon={<Error />} 
+                    label={`失敗: ${queryProgress.failedBatches}`}
+                    size="small"
+                    sx={{ 
+                      backgroundColor: '#f44336', 
+                      color: '#fff',
+                      '& .MuiChip-icon': { color: '#fff' }
+                    }}
+                  />
+                )}
+                <Chip 
+                  label={`總記錄: ${trendData?.queryInfo?.totalRecords || 0}`}
+                  size="small"
+                  sx={{ backgroundColor: '#2a2d42', color: '#b5b8c6' }}
+                />
+              </Box>
+            </>
+          )}
+          
+          {loadingState.isLoading && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <CircularProgress size={20} sx={{ color: '#49cfff' }} />
+              <Typography variant="body2" sx={{ color: '#b5b8c6' }}>
+                {queryProgress.method === 'batch' 
+                  ? `正在處理批次查詢... (${timeRange} 範圍)`
+                  : `正在載入數據... (${timeRange} 範圍)`}
+              </Typography>
+            </Box>
+          )}
+        </Paper>
       )}
 
       {/* 統計卡片 */}

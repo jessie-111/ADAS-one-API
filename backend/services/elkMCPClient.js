@@ -356,6 +356,46 @@ class ElkMCPClient {
     }
   }
 
+  // 建構 Elasticsearch 自定義時間查詢
+  buildElasticsearchCustomTimeQuery(startTime, endTime, filters = {}) {
+    console.log('🔍 建構自定義時間範圍查詢:', startTime, 'to', endTime);
+    
+    const query = {
+      query: {
+        range: {
+          "@timestamp": {
+            gte: startTime,
+            lte: endTime
+          }
+        }
+      },
+      sort: [
+        {
+          "@timestamp": {
+            order: "desc"
+          }
+        }
+      ],
+      size: 5000  // 增加查詢大小以確保涵蓋自定義時間範圍內的所有資料
+    };
+
+    // 添加額外的篩選條件（如果需要的話）
+    if (Object.keys(filters).length > 0) {
+      query.query = {
+        bool: {
+          must: [
+            query.query,
+            ...Object.entries(filters).map(([field, value]) => ({
+              term: { [field]: value }
+            }))
+          ]
+        }
+      };
+    }
+
+    return query;
+  }
+
   // 建構 Elasticsearch 查詢
   buildElasticsearchQuery(timeRange = '1h', filters = {}) {
     // 智能時間範圍查詢策略
@@ -468,6 +508,152 @@ class ElkMCPClient {
     return Object.values(CLOUDFLARE_FIELD_MAPPING).map(field => field.elk_field);
   }
 
+  // 執行 Elasticsearch 查詢 (自定義時間範圍)
+  async queryElasticsearchCustomTime(startTime, endTime, filters = {}) {
+    try {
+      await this.ensureConnection();
+    } catch (error) {
+      console.log('⚠️ 單例連接失敗，嘗試使用新實例...');
+      // 如果單例連接失敗，使用新實例
+      return await this.queryWithNewInstanceCustomTime(startTime, endTime, filters);
+    }
+
+    try {
+      const query = this.buildElasticsearchCustomTimeQuery(startTime, endTime, filters);
+      
+      console.log('📊 執行 Elasticsearch 自定義時間查詢...');
+      console.log('查詢時間範圍:', startTime, '到', endTime);
+      console.log('篩選條件:', filters);
+      console.log('索引:', ELK_CONFIG.elasticsearch.index);
+      console.log('查詢內容:', JSON.stringify(query, null, 2));
+
+      // 使用 MCP 工具執行查詢
+      const result = await this.client.callTool({
+        name: 'search',
+        arguments: {
+          index: ELK_CONFIG.elasticsearch.index,
+          query_body: query
+        }
+      });
+
+      return this.parseElasticsearchResponse(result);
+    } catch (error) {
+      console.error('❌ Elasticsearch 自定義時間查詢失敗:', error.message);
+      
+      // 如果是連接相關錯誤，嘗試使用新實例重試
+      if (error.message.includes('Connection closed') || 
+          error.message.includes('MCP error -32000') ||
+          error.code === -32000) {
+        console.log('🔄 檢測到連接問題，使用新實例重試自定義時間查詢...');
+        try {
+          return await this.queryWithNewInstanceCustomTime(startTime, endTime, filters);
+        } catch (retryError) {
+          console.error('❌ 新實例自定義時間查詢重試也失敗:', retryError.message);
+          throw retryError;
+        }
+      }
+      
+      throw error;
+    }
+  }
+
+  // 使用新實例執行自定義時間查詢（備用方案）
+  async queryWithNewInstanceCustomTime(startTime, endTime, filters = {}) {
+    console.log('🔄 嘗試使用新的 MCP 實例進行自定義時間查詢...');
+    
+    const newClient = new ElkMCPClient();
+    try {
+      await newClient.connect();
+      const query = newClient.buildElasticsearchCustomTimeQuery(startTime, endTime, filters);
+      
+      const result = await newClient.client.callTool({
+        name: 'search',
+        arguments: {
+          index: ELK_CONFIG.elasticsearch.index,
+          query_body: query
+        }
+      });
+
+      return newClient.parseElasticsearchResponse(result);
+    } catch (error) {
+      console.error('❌ 新實例自定義時間查詢也失敗:', error);
+      throw error;
+    } finally {
+      await newClient.disconnect();
+    }
+  }
+
+  // 解析 Elasticsearch 響應
+  parseElasticsearchResponse(result) {
+    if (result.isError) {
+      throw new Error(`Elasticsearch 查詢錯誤: ${result.content[0]?.text || 'Unknown error'}`);
+    }
+
+    // 處理 MCP Server 的文本回應
+    const responseText = result.content[0]?.text || '';
+    console.log('MCP Server 回應 (摘要):', responseText.substring(0, 200) + '...');
+    
+    // 檢查是否有第二個 content（實際的資料）
+    const dataText = result.content[1]?.text || responseText;
+    console.log('實際資料長度:', dataText.length, '前 100 字元:', dataText.substring(0, 100));
+    
+    // 嘗試解析 JSON 回應
+    let responseData;
+    try {
+      // 首先嘗試解析為記錄陣列（最常見的情況）
+      const records = JSON.parse(dataText);
+      if (Array.isArray(records)) {
+        console.log(`✅ 解析為記錄陣列，找到 ${records.length} 筆記錄`);
+        return {
+          total: records.length,
+          hits: records.map((record, index) => ({
+            id: record.RayID || record._id || index.toString(),
+            source: record,
+            timestamp: record["@timestamp"]
+          }))
+        };
+      } else {
+        // 如果不是陣列，可能是標準 Elasticsearch 格式
+        responseData = records;
+      }
+    } catch (e) {
+      // 如果都無法解析，嘗試從摘要中提取數字
+      console.log('回應不是 JSON 格式，嘗試解析摘要');
+      const match = responseText.match(/Total results: (\d+)/);
+      if (match) {
+        const totalCount = parseInt(match[1]);
+        console.log(`從摘要中發現 ${totalCount} 筆記錄，但無法解析詳細資料`);
+        // 如果有資料但無法解析，回傳簡化的模擬資料
+        if (totalCount > 0) {
+          return {
+            total: totalCount,
+            hits: [],
+            summary: `發現 ${totalCount} 筆記錄，但資料格式無法解析`
+          };
+        }
+      }
+      return {
+        total: 0,
+        hits: [],
+        summary: responseText
+      };
+    }
+    
+    // 處理標準 Elasticsearch 回應格式
+    const hits = responseData.hits?.hits || [];
+
+    console.log(`✅ 查詢完成，找到 ${hits.length} 筆記錄`);
+    
+    return {
+      total: responseData.hits?.total?.value || hits.length,
+      hits: hits.map(hit => ({
+        id: hit._id,
+        source: hit._source,
+        timestamp: hit._source["@timestamp"]
+      }))
+    };
+  }
+
   // 執行 Elasticsearch 查詢
   async queryElasticsearch(timeRange = '1h', filters = {}) {
     try {
@@ -496,76 +682,24 @@ class ElkMCPClient {
         }
       });
 
-      if (result.isError) {
-        throw new Error(`Elasticsearch 查詢錯誤: ${result.content[0]?.text || 'Unknown error'}`);
-      }
-
-      // 處理 MCP Server 的文本回應
-      const responseText = result.content[0]?.text || '';
-      console.log('MCP Server 回應 (摘要):', responseText.substring(0, 200) + '...');
-      
-      // 檢查是否有第二個 content（實際的資料）
-      const dataText = result.content[1]?.text || responseText;
-      console.log('實際資料長度:', dataText.length, '前 100 字元:', dataText.substring(0, 100));
-      
-      // 嘗試解析 JSON 回應
-      let responseData;
-      try {
-        // 首先嘗試解析為記錄陣列（最常見的情況）
-        const records = JSON.parse(dataText);
-        if (Array.isArray(records)) {
-          console.log(`✅ 解析為記錄陣列，找到 ${records.length} 筆記錄`);
-          return {
-            total: records.length,
-            hits: records.map((record, index) => ({
-              id: record.RayID || record._id || index.toString(),
-              source: record,
-              timestamp: record["@timestamp"]
-            }))
-          };
-        } else {
-          // 如果不是陣列，可能是標準 Elasticsearch 格式
-          responseData = records;
-        }
-      } catch (e) {
-        // 如果都無法解析，嘗試從摘要中提取數字
-        console.log('回應不是 JSON 格式，嘗試解析摘要');
-        const match = responseText.match(/Total results: (\d+)/);
-        if (match) {
-          const totalCount = parseInt(match[1]);
-          console.log(`從摘要中發現 ${totalCount} 筆記錄，但無法解析詳細資料`);
-          // 如果有資料但無法解析，回傳簡化的模擬資料
-          if (totalCount > 0) {
-            return {
-              total: totalCount,
-              hits: [],
-              summary: `發現 ${totalCount} 筆記錄，但資料格式無法解析`
-            };
-          }
-        }
-        return {
-          total: 0,
-          hits: [],
-          summary: responseText
-        };
-      }
-      
-      // 處理標準 Elasticsearch 回應格式
-      const hits = responseData.hits?.hits || [];
-
-      console.log(`✅ 查詢完成，找到 ${hits.length} 筆記錄`);
-      
-      return {
-        total: responseData.hits?.total?.value || hits.length,
-        hits: hits.map(hit => ({
-          id: hit._id,
-          source: hit._source,
-          timestamp: hit._source["@timestamp"]
-        }))
-      };
+      return this.parseElasticsearchResponse(result);
 
     } catch (error) {
       console.error('❌ Elasticsearch 查詢失敗:', error.message);
+      
+      // 如果是連接相關錯誤，嘗試使用新實例重試
+      if (error.message.includes('Connection closed') || 
+          error.message.includes('MCP error -32000') ||
+          error.code === -32000) {
+        console.log('🔄 檢測到連接問題，使用新實例重試...');
+        try {
+          return await this.queryWithNewInstance(timeRange, filters);
+        } catch (retryError) {
+          console.error('❌ 新實例重試也失敗:', retryError.message);
+          throw retryError;
+        }
+      }
+      
       throw error;
     }
   }
