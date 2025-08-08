@@ -23,7 +23,7 @@ const DDOSTable = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // 根據 WAFAttackScore 獲取風險等級和顏色
+  // 根據  獲取風險等級和顏色
   const getRiskLevel = (wafScore) => {
     if (wafScore === null || wafScore === undefined) {
       return { level: '未知', color: '#ffffff' };
@@ -69,30 +69,28 @@ const DDOSTable = () => {
       // 獲取配置 (包含API Key作為回退方案)
       const apiKey = localStorage.getItem('gemini_api_key'); // 回退方案
       const model = localStorage.getItem('gemini_model') || 'gemini-2.5-flash';
-      const dataSource = localStorage.getItem('data_source') || 'file';
+      const dataSource = 'elk'; // 固定使用 ELK 資料來源
       const timeRange = localStorage.getItem('elk_time_range') || 'auto';
 
-      // 如果使用ELK資料來源，先檢查連接狀態
-      if (dataSource === 'elk') {
-        console.log('�� 檢查 ELK 連接狀態...');
+      // 檢查 ELK 連接狀態
+      console.log('🔍 檢查 ELK 連接狀態...');
+      
+      const isConnected = await checkELKConnection();
+      if (!isConnected) {
+        setError('ELK 連接不可用，正在嘗試重新連接...');
+        console.log('⚠️ ELK 連接不可用，嘗試建立連接...');
         
-        const isConnected = await checkELKConnection();
-        if (!isConnected) {
-          setError('ELK 連接不可用，正在嘗試重新連接...');
-          console.log('⚠️ ELK 連接不可用，嘗試建立連接...');
-          
-          // 給ELK一些時間來建立連接
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          
-          // 再次檢查連接
-          const retryConnection = await checkELKConnection();
-          if (!retryConnection) {
-            throw new Error('ELK 連接失敗。請到「資料來源」頁面檢查 ELK 設定，或切換到檔案模式。');
-          }
+        // 給ELK一些時間來建立連接
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // 再次檢查連接
+        const retryConnection = await checkELKConnection();
+        if (!retryConnection) {
+          throw new Error('ELK 連接失敗。請到「資料來源」頁面檢查 ELK 設定。');
         }
-        
-        console.log('✅ ELK 連接狀態正常');
       }
+      
+      console.log('✅ ELK 連接狀態正常');
 
       // 使用專門的攻擊來源統計API (包含回退方案)
       const response = await fetch('http://localhost:8080/api/attack-source-stats', {

@@ -246,7 +246,7 @@ function buildAttackRelationshipGraph(attackGraph, attackData) {
   return { nodes, edges };
 }
 
-export default function DDoSGraph() {
+export default function DDoSGraph({ aiConfig }) {
   const ref = useRef(null);
   const [graphData, setGraphData] = useState(null);
   const [attackData, setAttackData] = useState(null);
@@ -268,32 +268,50 @@ export default function DDoSGraph() {
     });
 
     try {
-      // 從localStorage獲取設定
-      const apiKey = localStorage.getItem('gemini_api_key');
-      const model = localStorage.getItem('gemini_model');
-      const dataSource = localStorage.getItem('data_source') || 'file';
+      // 從 aiConfig 獲取 AI 設定
+      const provider = aiConfig?.provider || 'gemini';
       const timeRange = localStorage.getItem('elk_time_range') || '1h';
 
-      // 檢查必要設定
-      if (!apiKey) {
-        throw new Error('請先在「AI分析設定」頁面設定 Gemini API Key');
+      let apiKey, model, apiUrl;
+      
+      if (provider === 'gemini') {
+        apiKey = aiConfig?.gemini?.apiKey || localStorage.getItem('gemini_api_key');
+        model = aiConfig?.gemini?.selectedModel || localStorage.getItem('gemini_model');
+        
+        if (!apiKey) {
+          throw new Error('請先在「AI分析設定」頁面設定 Gemini API Key');
+        }
+      } else if (provider === 'ollama') {
+        // 優先使用 aiConfig，然後是 localStorage，最後是默認值
+        apiUrl = aiConfig?.ollama?.apiUrl || localStorage.getItem('ollama_api_url') || 'http://localhost:11434';
+        model = aiConfig?.ollama?.selectedModel || localStorage.getItem('ollama_model');
+        
+        // 改進驗證邏輯：只有在 apiUrl 和 model 都明確為空或null時才報錯
+        if (!apiUrl || !model || model.trim() === '') {
+          let errorMsg = '請在「AI分析設定」頁面完成 Ollama 配置：';
+          if (!apiUrl) errorMsg += '\n- 設定 API 網址';
+          if (!model || model.trim() === '') errorMsg += '\n- 選擇 AI 模型';
+          throw new Error(errorMsg);
+        }
+      } else {
+        throw new Error(`不支援的 AI 提供商: ${provider}`);
       }
 
-      // 根據資料來源選擇對應的 API 端點
-      const endpoint = dataSource === 'elk' ? 
-        "http://localhost:8080/api/analyze-elk-log" : 
-        "http://localhost:8080/api/analyze-log";
+      // 固定使用 ELK 資料來源
+      const endpoint = "http://localhost:8080/api/analyze-elk-log";
 
-      // 呼叫日誌分析端點
+      // 呼叫 ELK 日誌分析端點
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          provider,
           apiKey,
           model,
-          dataSource,
+          apiUrl,
+          dataSource: 'elk',
           timeRange
         })
       });
@@ -305,13 +323,20 @@ export default function DDoSGraph() {
         // 根據 HTTP 狀態碼提供更友善的錯誤提示
         switch (response.status) {
           case 400:
-            errorMessage = 'Gemini API Key 無效或已過期';
+            errorMessage = provider === 'gemini' ? 
+              'Gemini API Key 無效或已過期' : 
+              'Ollama API 配置無效，請檢查網址和模型設定';
             break;
           case 429:
             errorMessage = 'API 使用量超出限制，請稍後再試';
             break;
           case 500:
             errorMessage = '服務器內部錯誤，請檢查日誌檔案';
+            break;
+          case 503:
+            errorMessage = provider === 'ollama' ? 
+              'Ollama 服務連接失敗，請確認服務是否運行' : 
+              '服務暫時不可用，請稍後再試';
             break;
           default:
             errorMessage = `HTTP ${response.status}: ${errorText}`;
