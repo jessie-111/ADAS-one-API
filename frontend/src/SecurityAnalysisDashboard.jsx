@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { 
   Button, 
   CircularProgress, 
@@ -9,7 +9,11 @@ import {
   Box,
   Grid,
   Card,
-  CardContent
+  CardContent,
+  TextField,
+  FormControlLabel,
+  Checkbox,
+  Stack
 } from '@mui/material';
 import { Psychology, Security, Speed, Block, Public } from '@mui/icons-material';
 import {
@@ -29,6 +33,43 @@ import {
   ResponsiveContainer,
   Cell
 } from 'recharts';
+
+import useContainerWidth from './hooks/useContainerWidth';
+import { buildTicks, buildSeriesWithTimestamps, formatTickWithPattern } from './utils/timeAxis';
+
+// === 時間軸輔助：生成連續時間序列與整點刻度（6小時測試重點，但不硬編碼具體時間） ===
+function buildTimeSeries(dataArray, timeRange) {
+  const fallback = Array.isArray(dataArray) ? dataArray : [];
+  const startMs = timeRange?.start ? new Date(timeRange.start).getTime() : Date.now();
+  const endMs = timeRange?.end ? new Date(timeRange.end).getTime() : startMs + 6 * 60 * 60 * 1000;
+
+  const points = Math.max(fallback.length, 1);
+  const stepMs = points > 1 ? Math.floor((endMs - startMs) / (points - 1)) : 15 * 60 * 1000;
+
+  const series = fallback.map((item, index) => ({
+    ...item,
+    timestamp: startMs + index * stepMs
+  }));
+
+  // 產生整點刻度（包含起訖），避免 Recharts 自動抽樣造成不連續觀感
+  const ticks = [];
+  const firstHour = new Date(startMs);
+  firstHour.setMinutes(0, 0, 0);
+  let t = firstHour.getTime();
+  if (t < startMs) t += 60 * 60 * 1000;
+  for (; t <= endMs; t += 60 * 60 * 1000) {
+    ticks.push(t);
+  }
+
+  return { series, ticks, startMs, endMs };
+}
+
+function formatTickHHmm(value) {
+  const d = new Date(value);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
 
 // 統計卡片組件
 const StatsCard = ({ title, value, subtitle, icon, trend, color = "primary" }) => (
@@ -58,7 +99,8 @@ const StatsCard = ({ title, value, subtitle, icon, trend, color = "primary" }) =
 );
 
 // 攻擊類型阻擋統計圖表組件
-const SecurityBlockingChart = ({ data }) => {
+const SecurityBlockingChart = ({ data, timeRange }) => {
+  const { ref, width } = useContainerWidth();
   // 使用後端提供的動態時間序列數據
   const chartData = Array.isArray(data) ? data : [
     { name: '02:40', SQL注入: 5, XSS攻擊: 3, CSRF: 2, 其他攻擊: 1 },
@@ -67,6 +109,10 @@ const SecurityBlockingChart = ({ data }) => {
     { name: '02:43', SQL注入: 9, XSS攻擊: 7, CSRF: 5, 其他攻擊: 2 },
     { name: '02:44', SQL注入: 6, XSS攻擊: 4, CSRF: 3, 其他攻擊: 1 }
   ];
+  const startMs = timeRange?.start ? new Date(timeRange.start).getTime() : Date.now() - 6 * 60 * 60 * 1000;
+  const endMs = timeRange?.end ? new Date(timeRange.end).getTime() : Date.now();
+  const series = useMemo(() => buildSeriesWithTimestamps(chartData, startMs, endMs), [chartData, startMs, endMs]);
+  const tickInfo = useMemo(() => buildTicks(startMs, endMs, width), [startMs, endMs, width]);
 
   return (
     <Card sx={{ 
@@ -85,35 +131,45 @@ const SecurityBlockingChart = ({ data }) => {
         <Typography variant="body2" sx={{ color: '#94a3b8', mb: 2 }}>
           過去6個月的攻擊類型和阻擋數量統計
         </Typography>
-        <ResponsiveContainer width="100%" height={340}>
-          <BarChart data={chartData}>
+        <Box ref={ref} sx={{ width: '100%', height: 340 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={series}>
             <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-            <XAxis dataKey="name" />
+            <XAxis
+              type="number"
+              scale="time"
+              dataKey="timestamp"
+              domain={[startMs, endMs]}
+              ticks={tickInfo.ticks}
+              interval={0}
+              tickFormatter={(v) => formatTickWithPattern(v, tickInfo.format)}
+              minTickGap={12}
+              tickMargin={10}
+            />
             <YAxis />
-            <Tooltip />
+            <Tooltip labelFormatter={(v) => formatTickWithPattern(v, tickInfo.format)} />
             <Legend />
             <Bar dataKey="SQL注入" stackId="a" fill="#ef4444" />
             <Bar dataKey="XSS攻擊" stackId="a" fill="#f97316" />
             <Bar dataKey="CSRF" stackId="a" fill="#eab308" />
             <Bar dataKey="其他攻擊" stackId="a" fill="#6b7280" />
-          </BarChart>
-        </ResponsiveContainer>
+            </BarChart>
+          </ResponsiveContainer>
+        </Box>
       </CardContent>
     </Card>
   );
 };
 
 // 性能優化趨勢圖表組件  
-const PerformanceTrendChart = ({ data }) => {
+const PerformanceTrendChart = ({ data, timeRange }) => {
+  const { ref, width } = useContainerWidth();
   // 使用後端提供的性能趨勢數據
-  const chartData = (data && data.blockingRate && data.blockingRate.data) ? 
-    data.blockingRate.data : [
-    { name: '02:40', 阻擋率: 100, 響應時間: 98 },
-    { name: '02:41', 阻擋率: 95, 響應時間: 97 },  
-    { name: '02:42', 阻擋率: 100, 響應時間: 99 },
-    { name: '02:43', 阻擋率: 100, 響應時間: 98 },
-    { name: '02:44', 阻擋率: 100, 響應時間: 99 }
-  ];
+  const chartData = (data && data.blockingRate && data.blockingRate.data) ? data.blockingRate.data : [];
+  const startMs = timeRange?.start ? new Date(timeRange.start).getTime() : Date.now() - 6 * 60 * 60 * 1000;
+  const endMs = timeRange?.end ? new Date(timeRange.end).getTime() : Date.now();
+  const series = useMemo(() => buildSeriesWithTimestamps(chartData, startMs, endMs), [chartData, startMs, endMs]);
+  const tickInfo = useMemo(() => buildTicks(startMs, endMs, width), [startMs, endMs, width]);
 
   return (
     <Card sx={{ 
@@ -132,12 +188,23 @@ const PerformanceTrendChart = ({ data }) => {
         <Typography variant="body2" sx={{ color: '#94a3b8', mb: 2 }}>
           響應時間和阻擋率效率趨勢分析
         </Typography>
-        <ResponsiveContainer width="100%" height={340}>
-          <LineChart data={chartData}>
+        <Box ref={ref} sx={{ width: '100%', height: 340 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={series}>
             <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-            <XAxis dataKey="name" />
+            <XAxis
+              type="number"
+              scale="time"
+              dataKey="timestamp"
+              domain={[startMs, endMs]}
+              ticks={tickInfo.ticks}
+              interval={0}
+              tickFormatter={(v) => formatTickWithPattern(v, tickInfo.format)}
+              minTickGap={12}
+              tickMargin={10}
+            />
             <YAxis />
-            <Tooltip />
+            <Tooltip labelFormatter={(v) => formatTickWithPattern(v, tickInfo.format)} />
             <Legend />
             <Line 
               type="monotone" 
@@ -145,6 +212,7 @@ const PerformanceTrendChart = ({ data }) => {
               stroke="#10b981" 
               strokeWidth={3}
               dot={{ fill: '#10b981', strokeWidth: 2 }}
+              connectNulls
             />
             <Line 
               type="monotone" 
@@ -152,9 +220,11 @@ const PerformanceTrendChart = ({ data }) => {
               stroke="#ef4444" 
               strokeWidth={3}
               dot={{ fill: '#ef4444', strokeWidth: 2 }}
+              connectNulls
             />
-          </LineChart>
-        </ResponsiveContainer>
+            </LineChart>
+          </ResponsiveContainer>
+        </Box>
       </CardContent>
     </Card>
   );
@@ -216,15 +286,14 @@ const ThreatDistributionChart = ({ data }) => {
 };
 
 // 流量統計圖表組件
-const TrafficStatsChart = ({ data }) => {
+const TrafficStatsChart = ({ data, timeRange }) => {
+  const { ref, width } = useContainerWidth();
   // 使用後端提供的流量時間序列數據
-  const chartData = Array.isArray(data) ? data : [
-    { name: '02:40', 惡意流量: 120, 正常流量: 850 },
-    { name: '02:41', 惡意流量: 180, 正常流量: 920 },
-    { name: '02:42', 惡意流量: 150, 正常流量: 1100 },
-    { name: '02:43', 惡意流量: 95, 正常流量: 1200 },
-    { name: '02:44', 惡意流量: 80, 正常流量: 950 }
-  ];
+  const chartData = Array.isArray(data) ? data : [];
+  const startMs = timeRange?.start ? new Date(timeRange.start).getTime() : Date.now() - 6 * 60 * 60 * 1000;
+  const endMs = timeRange?.end ? new Date(timeRange.end).getTime() : Date.now();
+  const series = useMemo(() => buildSeriesWithTimestamps(chartData, startMs, endMs), [chartData, startMs, endMs]);
+  const tickInfo = useMemo(() => buildTicks(startMs, endMs, width), [startMs, endMs, width]);
 
   return (
     <Card sx={{ 
@@ -243,12 +312,23 @@ const TrafficStatsChart = ({ data }) => {
         <Typography variant="body2" sx={{ color: '#94a3b8', mb: 2 }}>
           正常流量與惡意流量處理情況
         </Typography>
-        <ResponsiveContainer width="100%" height={340}>
-          <AreaChart data={chartData}>
+        <Box ref={ref} sx={{ width: '100%', height: 340 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={series}>
             <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-            <XAxis dataKey="name" />
+            <XAxis
+              type="number"
+              scale="time"
+              dataKey="timestamp"
+              domain={[startMs, endMs]}
+              ticks={tickInfo.ticks}
+              interval={0}
+              tickFormatter={(v) => formatTickWithPattern(v, tickInfo.format)}
+              minTickGap={12}
+              tickMargin={10}
+            />
             <YAxis />
-            <Tooltip />
+            <Tooltip labelFormatter={(v) => formatTickWithPattern(v, tickInfo.format)} />
             <Legend />
             <Area
               type="monotone"
@@ -257,6 +337,7 @@ const TrafficStatsChart = ({ data }) => {
               stroke="#10b981"
               fill="#10b981"
               fillOpacity={0.8}
+              connectNulls
             />
             <Area
               type="monotone"
@@ -265,9 +346,11 @@ const TrafficStatsChart = ({ data }) => {
               stroke="#ef4444"
               fill="#ef4444"
               fillOpacity={0.8}
+              connectNulls
             />
-          </AreaChart>
-        </ResponsiveContainer>
+            </AreaChart>
+          </ResponsiveContainer>
+        </Box>
       </CardContent>
     </Card>
   );
@@ -278,6 +361,63 @@ const SecurityAnalysisDashboard = ({ aiConfig }) => {
   const [securityData, setSecurityData] = useState(null);
   const [aiAnalysis, setAiAnalysis] = useState(null);
   const [error, setError] = useState(null);
+  // 自訂時間控制
+  const [customStart, setCustomStart] = useState('');
+  const [customEnd, setCustomEnd] = useState('');
+  const [oneTimeOnly, setOneTimeOnly] = useState(true);
+
+  // 深色主題輸入框樣式
+  const darkInputSx = {
+    minWidth: 240,
+    '& .MuiInputBase-root': {
+      backgroundColor: '#111827',
+      color: '#e5e7eb',
+      caretColor: '#60a5fa'
+    },
+    '& .MuiOutlinedInput-notchedOutline': {
+      borderColor: '#3b82f6',
+    },
+    '&:hover .MuiOutlinedInput-notchedOutline': {
+      borderColor: '#60a5fa',
+    },
+    '& .MuiInputLabel-root': {
+      color: '#93c5fd',
+    },
+    '& .MuiInputLabel-root.Mui-focused': {
+      color: '#60a5fa',
+    },
+    '& .MuiSvgIcon-root': {
+      color: '#60a5fa',
+    },
+    '& .MuiInputBase-input::placeholder': {
+      color: '#93c5fd',
+      opacity: 0.7,
+    },
+    // 美化 datetime 本機日曆圖示（僅 WebKit 有效）
+    '& input[type="datetime-local"]::-webkit-calendar-picker-indicator': {
+      filter: 'invert(61%) sepia(55%) saturate(671%) hue-rotate(182deg) brightness(99%) contrast(103%)',
+      opacity: 0.9
+    },
+  };
+
+  const toLocalInput = (iso) => {
+    if (!iso) return '';
+    try {
+      const d = new Date(iso);
+      const pad = (n) => String(n).padStart(2, '0');
+      const yyyy = d.getFullYear();
+      const MM = pad(d.getMonth() + 1);
+      const dd = pad(d.getDate());
+      const HH = pad(d.getHours());
+      const mm = pad(d.getMinutes());
+      return `${yyyy}-${MM}-${dd}T${HH}:${mm}`;
+    } catch { return ''; }
+  };
+  const toISO = (localStr) => {
+    if (!localStr) return '';
+    const d = new Date(localStr);
+    return isNaN(d.getTime()) ? '' : d.toISOString();
+  };
 
   // 載入防護分析數據
   const loadSecurityData = async () => {
@@ -287,10 +427,19 @@ const SecurityAnalysisDashboard = ({ aiConfig }) => {
     try {
       console.log('🔍 載入防護分析數據...');
       
-      // 獲取時間範圍配置
-      const timeRange = localStorage.getItem('elk_time_range') || 'auto';
-      const customStartTime = localStorage.getItem('elk_custom_start_time') || undefined;
-      const customEndTime = localStorage.getItem('elk_custom_end_time') || undefined;
+      // 取得時間範圍設定（優先使用當前輸入，其次 localStorage）
+      let timeRange = localStorage.getItem('elk_time_range') || 'auto';
+      let customStartTime = localStorage.getItem('elk_custom_start_time') || undefined;
+      let customEndTime = localStorage.getItem('elk_custom_end_time') || undefined;
+      if (customStart && customEnd) {
+        const sISO = toISO(customStart);
+        const eISO = toISO(customEnd);
+        if (sISO && eISO) {
+          timeRange = 'custom';
+          customStartTime = sISO;
+          customEndTime = eISO;
+        }
+      }
       
       // 構建請求體，只包含有效值
       const requestBody = {
@@ -329,6 +478,11 @@ const SecurityAnalysisDashboard = ({ aiConfig }) => {
       setError(error.message);
     } finally {
       setLoading(false);
+      if (oneTimeOnly) {
+        localStorage.removeItem('elk_custom_start_time');
+        localStorage.removeItem('elk_custom_end_time');
+        localStorage.setItem('elk_time_range', 'auto');
+      }
     }
   };
 
@@ -344,9 +498,18 @@ const SecurityAnalysisDashboard = ({ aiConfig }) => {
       console.log('📊 正在載入數據...');
       
       // 獲取時間範圍配置
-      const timeRange = localStorage.getItem('elk_time_range') || 'auto';
-      const customStartTime = localStorage.getItem('elk_custom_start_time') || undefined;
-      const customEndTime = localStorage.getItem('elk_custom_end_time') || undefined;
+      let timeRange = localStorage.getItem('elk_time_range') || 'auto';
+      let customStartTime = localStorage.getItem('elk_custom_start_time') || undefined;
+      let customEndTime = localStorage.getItem('elk_custom_end_time') || undefined;
+      if (customStart && customEnd) {
+        const sISO = toISO(customStart);
+        const eISO = toISO(customEnd);
+        if (sISO && eISO) {
+          timeRange = 'custom';
+          customStartTime = sISO;
+          customEndTime = eISO;
+        }
+      }
       
       // 構建請求體，只包含有效值
       const requestBody = {
@@ -453,6 +616,11 @@ const SecurityAnalysisDashboard = ({ aiConfig }) => {
   useEffect(() => {
     // 頁面初始化時不執行任何自動分析
     console.log('🎯 防護分析頁面已載入，等待用戶手動觸發分析');
+    // 載入已有自訂區間
+    const s = localStorage.getItem('elk_custom_start_time');
+    const e = localStorage.getItem('elk_custom_end_time');
+    if (s) setCustomStart(toLocalInput(s));
+    if (e) setCustomEnd(toLocalInput(e));
   }, []);
 
   return (
@@ -471,24 +639,65 @@ const SecurityAnalysisDashboard = ({ aiConfig }) => {
         </Typography>
       </Box>
 
-      {/* AI 智慧防護分析按鈕 */}
-      <Box sx={{ mb: 3, textAlign: 'center' }}>
-        <Button
-          variant="contained"
-          onClick={handleCombinedAnalysis}
-          disabled={loading}
-          startIcon={loading ? <CircularProgress size={20} /> : <Psychology />}
-          sx={{
-            background: 'linear-gradient(45deg, #FF6B6B 30%, #4ECDC4 90%)',
-            boxShadow: '0 3px 5px 2px rgba(255, 105, 135, .3)',
-            px: 4,
-            py: 1.5,
-            fontSize: '1.1rem',
-          }}
-          title="一鍵執行完整的防護數據載入與AI智能分析"
-        >
-          {loading ? '分析中...' : '🤖 AI智慧防護分析'}
-        </Button>
+      {/* 自訂時間 + AI 智慧防護分析按鈕 */}
+      <Box sx={{ mb: 3 }}>
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ xs: 'stretch', md: 'center' }} justifyContent="space-between">
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ xs: 'stretch', md: 'center' }}>
+            <TextField
+              label="開始時間"
+              type="datetime-local"
+              size="small"
+              InputLabelProps={{ shrink: true }}
+              value={customStart}
+              onChange={(e) => setCustomStart(e.target.value)}
+              sx={darkInputSx}
+            />
+            <TextField
+              label="結束時間"
+              type="datetime-local"
+              size="small"
+              InputLabelProps={{ shrink: true }}
+              value={customEnd}
+              onChange={(e) => setCustomEnd(e.target.value)}
+              sx={darkInputSx}
+            />
+            <Button variant="outlined" onClick={() => {
+              // 寫入 localStorage，供本次分析使用
+              if (!customStart || !customEnd) { setError('請選擇起訖時間'); return; }
+              const sISO = toISO(customStart); const eISO = toISO(customEnd);
+              if (!sISO || !eISO) { setError('時間格式無效'); return; }
+              if (new Date(eISO).getTime() <= new Date(sISO).getTime()) { setError('結束時間必須大於開始時間'); return; }
+              localStorage.setItem('elk_time_range', 'custom');
+              localStorage.setItem('elk_custom_start_time', sISO);
+              localStorage.setItem('elk_custom_end_time', eISO);
+            }} disabled={loading}>套用</Button>
+            <Button variant="text" color="inherit" onClick={() => {
+              localStorage.removeItem('elk_custom_start_time');
+              localStorage.removeItem('elk_custom_end_time');
+              localStorage.setItem('elk_time_range', 'auto');
+              setCustomStart(''); setCustomEnd('');
+            }} disabled={loading}>清除</Button>
+            <FormControlLabel control={<Checkbox checked={oneTimeOnly} onChange={(e)=>setOneTimeOnly(e.target.checked)} />} label="僅此次分析" sx={{ color: '#9ca3af' }} />
+          </Stack>
+          <Box sx={{ textAlign: { xs: 'center', md: 'right' } }}>
+            <Button
+              variant="contained"
+              onClick={handleCombinedAnalysis}
+              disabled={loading}
+              startIcon={loading ? <CircularProgress size={20} /> : <Psychology />}
+              sx={{
+                background: 'linear-gradient(45deg, #FF6B6B 30%, #4ECDC4 90%)',
+                boxShadow: '0 3px 5px 2px rgba(255, 105, 135, .3)',
+                px: 4,
+                py: 1.5,
+                fontSize: '1.1rem',
+              }}
+              title="一鍵執行完整的防護數據載入與AI智能分析"
+            >
+              {loading ? '分析中...' : '🤖 AI智慧防護分析'}
+            </Button>
+          </Box>
+        </Stack>
       </Box>
 
       {/* 錯誤提示 */}
@@ -569,10 +778,10 @@ const SecurityAnalysisDashboard = ({ aiConfig }) => {
           <Grid container spacing={4} sx={{ mb: 4 }}>
             {/* 第一排：均勻分配 */}
             <Grid item xs={12} md={6}>
-              <SecurityBlockingChart data={securityData.attackTypeStats} />
+              <SecurityBlockingChart data={securityData.attackTypeStats} timeRange={securityData.timeRange} />
             </Grid>
             <Grid item xs={12} md={6}>
-              <PerformanceTrendChart data={securityData.performanceTrend} />
+              <PerformanceTrendChart data={securityData.performanceTrend} timeRange={securityData.timeRange} />
             </Grid>
             
             {/* 第二排：均勻分配 */}
@@ -580,7 +789,7 @@ const SecurityAnalysisDashboard = ({ aiConfig }) => {
               <ThreatDistributionChart data={securityData.threatDistribution} />
             </Grid>
             <Grid item xs={12} md={6}>
-              <TrafficStatsChart data={securityData.trafficStats.data} />
+              <TrafficStatsChart data={securityData.trafficStats.data} timeRange={securityData.timeRange} />
             </Grid>
           </Grid>
         </>
