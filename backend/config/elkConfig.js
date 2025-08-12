@@ -27,7 +27,7 @@ const ELK_CONFIG = {
     ],
     
     // 連接配置
-    timeout: parseInt(process.env.ELK_MCP_TIMEOUT) || 30000,
+    timeout: parseInt(process.env.ELK_MCP_TIMEOUT) || 240000,  // 4分鐘，適應月度查詢需求
     retryAttempts: parseInt(process.env.ELK_MCP_RETRY) || 3
   },
 
@@ -122,6 +122,59 @@ const OWASP_REFERENCES = {
   }
 };
 
+// 攻擊路徑分類配置
+const ATTACK_PATH_CATEGORIES = {
+  'Environment Files': {
+    patterns: ['.env', '.config'],
+    description: '環境配置檔案，通常包含敏感資訊如資料庫密碼、API金鑰'
+  },
+  'Configuration Files': {
+    patterns: ['config', '.yml', '.xml'],
+    description: '系統配置檔案，可能暴露服務配置和敏感設定'
+  },
+  'Admin Panels': {
+    patterns: ['admin', 'wp-admin'],
+    description: '管理介面，攻擊者試圖獲取管理權限'
+  },
+  'Version Control': {
+    patterns: ['.git', '.svn'],
+    description: '版本控制系統檔案，可能洩露源碼和開發資訊'
+  },
+  'System Information': {
+    patterns: ['phpinfo', 'info.php'],
+    description: '系統資訊頁面，可能暴露伺服器配置詳情'
+  },
+  'API Configuration': {
+    patterns: ['firebase', 'api'],
+    description: 'API配置檔案，可能包含第三方服務金鑰'
+  },
+  'Script Files': {
+    patterns: ['.php', '.asp'],
+    description: '腳本檔案，攻擊者可能嘗試執行或探測漏洞'
+  },
+  'Database Access': {
+    patterns: ['phpmyadmin', 'adminer', '.sql'],
+    description: '資料庫管理工具或SQL檔案'
+  },
+  'Backup Files': {
+    patterns: ['.backup', '.bak', '.old', '.tmp'],
+    description: '備份檔案，可能包含敏感資料或舊版漏洞'
+  },
+  'Development Files': {
+    patterns: ['.log', 'debug', 'test', 'dev'],
+    description: '開發相關檔案，可能洩露開發資訊'
+  },
+  // 🆕 新增攻擊類型示例
+  'Container Escape': {
+    patterns: ['docker', 'kubernetes', 'k8s', '.kube', 'containerd', 'podman'],
+    description: '容器逃逸攻擊，試圖從容器環境逃脫到主機系統'
+  },
+  'AI/ML Models': {
+    patterns: ['.pkl', '.pt', '.pth', '.onnx', '.h5', '.pb', 'model', 'checkpoint'],
+    description: 'AI/ML 模型攻擊，針對機器學習模型檔案和訓練數據'
+  }
+};
+
 // 輔助函數：根據攻擊模式識別 OWASP 類型
 const identifyOWASPType = (uri, userAgent, securityRules) => {
   const detectedTypes = [];
@@ -144,7 +197,7 @@ const identifyOWASPType = (uri, userAgent, securityRules) => {
   }
   
   // 檢查 User Agent 模式
-  if (userAgent) {
+  if (userAgent && typeof userAgent === 'string') {
     const suspiciousAgents = ['sqlmap', 'nmap', 'nikto', 'dirb', 'gobuster', 'wfuzz'];
     for (const agent of suspiciousAgents) {
       if (userAgent.toLowerCase().includes(agent)) {
@@ -164,9 +217,38 @@ const identifyOWASPType = (uri, userAgent, securityRules) => {
   return detectedTypes;
 };
 
+// 配置驅動的攻擊路徑分類函數
+const categorizeAttackPathByConfig = (url) => {
+  if (!url) return 'Unknown';
+  
+  const path = url.toLowerCase();
+  
+  // 遍歷所有分類配置
+  for (const [category, config] of Object.entries(ATTACK_PATH_CATEGORIES)) {
+    // 檢查是否符合任何模式
+    for (const pattern of config.patterns) {
+      if (path.includes(pattern.toLowerCase())) {
+        return {
+          category: category,
+          description: config.description,
+          matchedPattern: pattern
+        };
+      }
+    }
+  }
+  
+  return {
+    category: 'Other',
+    description: '其他類型的攻擊路徑',
+    matchedPattern: null
+  };
+};
+
 // 匯出配置
 module.exports = {
   ELK_CONFIG,
   OWASP_REFERENCES,
-  identifyOWASPType
+  identifyOWASPType,
+  ATTACK_PATH_CATEGORIES,
+  categorizeAttackPathByConfig
 }; 
