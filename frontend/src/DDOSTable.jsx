@@ -249,7 +249,7 @@ const DDOSTable = () => {
 
       <Grid container spacing={3}>
         {/* 來源 IP 統計 */}
-        <Grid item xs={12} md={6}>
+        <Grid size={{ xs: 12, md: 6 }}>
           <StatTable
             title="來源 IP"
             data={topIPs.slice(0, 5)}
@@ -285,7 +285,7 @@ const DDOSTable = () => {
         </Grid>
 
         {/* 目標主機統計 */}
-        <Grid item xs={12} md={6}>
+        <Grid size={{ xs: 12, md: 6 }}>
           <StatTable
             title="主機"
             data={topDomains.slice(0, 10)}
@@ -320,7 +320,7 @@ const DDOSTable = () => {
         </Grid>
 
         {/* 路徑統計 */}
-        <Grid item xs={12} md={6}>
+        <Grid size={{ xs: 12, md: 6 }}>
           <StatTable
             title="路徑"
             data={topURIs.slice(0, 10)}
@@ -356,7 +356,7 @@ const DDOSTable = () => {
         </Grid>
 
         {/* 連線狀態代碼（風險等級） */}
-        <Grid item xs={12} md={6}>
+        <Grid size={{ xs: 12, md: 6 }}>
           <StatTable
             title="HTTP 狀態碼"
             data={httpStatusStats.slice(0, 10)}
@@ -397,7 +397,7 @@ const DDOSTable = () => {
 
       {/* 來源國家統計 */}
       <Grid container spacing={3} sx={{ mt: 2 }}>
-        <Grid item xs={12}>
+        <Grid size={{ xs: 12 }}>
           <Paper sx={{ p: 2, backgroundColor: '#f8f9fa' }}>
             <Typography 
               variant="h6" 

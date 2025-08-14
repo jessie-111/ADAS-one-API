@@ -38,38 +38,7 @@ import useContainerWidth from './hooks/useContainerWidth';
 import { buildTicks, buildSeriesWithTimestamps, formatTickWithPattern } from './utils/timeAxis';
 
 // === 時間軸輔助：生成連續時間序列與整點刻度（6小時測試重點，但不硬編碼具體時間） ===
-function buildTimeSeries(dataArray, timeRange) {
-  const fallback = Array.isArray(dataArray) ? dataArray : [];
-  const startMs = timeRange?.start ? new Date(timeRange.start).getTime() : Date.now();
-  const endMs = timeRange?.end ? new Date(timeRange.end).getTime() : startMs + 6 * 60 * 60 * 1000;
-
-  const points = Math.max(fallback.length, 1);
-  const stepMs = points > 1 ? Math.floor((endMs - startMs) / (points - 1)) : 15 * 60 * 1000;
-
-  const series = fallback.map((item, index) => ({
-    ...item,
-    timestamp: startMs + index * stepMs
-  }));
-
-  // 產生整點刻度（包含起訖），避免 Recharts 自動抽樣造成不連續觀感
-  const ticks = [];
-  const firstHour = new Date(startMs);
-  firstHour.setMinutes(0, 0, 0);
-  let t = firstHour.getTime();
-  if (t < startMs) t += 60 * 60 * 1000;
-  for (; t <= endMs; t += 60 * 60 * 1000) {
-    ticks.push(t);
-  }
-
-  return { series, ticks, startMs, endMs };
-}
-
-function formatTickHHmm(value) {
-  const d = new Date(value);
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  return `${hh}:${mm}`;
-}
+// 移除未使用的輔助函式（已以 utils/timeAxis 統一處理）
 
 // 統計卡片組件
 const StatsCard = ({ title, value, subtitle, icon, trend, color = "primary" }) => (
@@ -98,21 +67,16 @@ const StatsCard = ({ title, value, subtitle, icon, trend, color = "primary" }) =
   </Card>
 );
 
-// 攻擊類型阻擋統計圖表組件
+// 攻擊統計數量（堆疊累計）圖表組件
 const SecurityBlockingChart = ({ data, timeRange }) => {
-  const { ref, width } = useContainerWidth();
+  const { ref } = useContainerWidth();
   // 使用後端提供的動態時間序列數據
-  const chartData = Array.isArray(data) ? data : [
-    { name: '02:40', SQL注入: 5, XSS攻擊: 3, CSRF: 2, 其他攻擊: 1 },
-    { name: '02:41', SQL注入: 8, XSS攻擊: 6, CSRF: 4, 其他攻擊: 2 },
-    { name: '02:42', SQL注入: 12, XSS攻擊: 8, CSRF: 6, 其他攻擊: 3 },
-    { name: '02:43', SQL注入: 9, XSS攻擊: 7, CSRF: 5, 其他攻擊: 2 },
-    { name: '02:44', SQL注入: 6, XSS攻擊: 4, CSRF: 3, 其他攻擊: 1 }
-  ];
+  const chartData = useMemo(() => (Array.isArray(data) ? data : []), [data]);
   const startMs = timeRange?.start ? new Date(timeRange.start).getTime() : Date.now() - 6 * 60 * 60 * 1000;
   const endMs = timeRange?.end ? new Date(timeRange.end).getTime() : Date.now();
   const series = useMemo(() => buildSeriesWithTimestamps(chartData, startMs, endMs), [chartData, startMs, endMs]);
-  const tickInfo = useMemo(() => buildTicks(startMs, endMs, width), [startMs, endMs, width]);
+  // 類別軸資料（與示範累積圖一致）：name 以 HH:mm 顯示
+  const displaySeries = useMemo(() => series.map((it) => ({ ...it, name: formatTickWithPattern(it.timestamp, 'HH:mm') })), [series]);
 
   return (
     <Card sx={{ 
@@ -126,33 +90,28 @@ const SecurityBlockingChart = ({ data, timeRange }) => {
     }}>
       <CardContent sx={{ p: 3 }}>
         <Typography variant="h6" gutterBottom sx={{ color: '#ffffff' }}>
-          攻擊類型阻擋統計
+          攻擊統計數量
         </Typography>
         <Typography variant="body2" sx={{ color: '#94a3b8', mb: 2 }}>
-          過去6個月的攻擊類型和阻擋數量統計
+          依時間區間累計 SQL注入／XSS攻擊／RCE遠程指令碼攻擊／機器人攻擊
         </Typography>
         <Box ref={ref} sx={{ width: '100%', height: 340 }}>
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={series}>
+            <BarChart 
+              data={displaySeries}
+              margin={{ top: 8, right: 16, bottom: 32, left: 8 }}
+              barCategoryGap="20%"
+              barGap="5%"
+            >
             <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-            <XAxis
-              type="number"
-              scale="time"
-              dataKey="timestamp"
-              domain={[startMs, endMs]}
-              ticks={tickInfo.ticks}
-              interval={0}
-              tickFormatter={(v) => formatTickWithPattern(v, tickInfo.format)}
-              minTickGap={12}
-              tickMargin={10}
-            />
+            <XAxis dataKey="name" tick={{ fill: '#b5b8c6' }} tickMargin={12} />
             <YAxis />
-            <Tooltip labelFormatter={(v) => formatTickWithPattern(v, tickInfo.format)} />
-            <Legend />
+            <Tooltip />
+            <Legend verticalAlign="bottom" height={28} wrapperStyle={{ color: '#b5b8c6' }} />
             <Bar dataKey="SQL注入" stackId="a" fill="#ef4444" />
             <Bar dataKey="XSS攻擊" stackId="a" fill="#f97316" />
-            <Bar dataKey="CSRF" stackId="a" fill="#eab308" />
-            <Bar dataKey="其他攻擊" stackId="a" fill="#6b7280" />
+            <Bar dataKey="RCE遠程指令碼攻擊" stackId="a" fill="#8b5cf6" />
+            <Bar dataKey="機器人攻擊" stackId="a" fill="#10b981" />
             </BarChart>
           </ResponsiveContainer>
         </Box>
@@ -186,7 +145,7 @@ const PerformanceTrendChart = ({ data, timeRange }) => {
           性能優化趨勢
         </Typography>
         <Typography variant="body2" sx={{ color: '#94a3b8', mb: 2 }}>
-          響應時間和阻擋率效率趨勢分析
+          響應時間與防護執行率趨勢
         </Typography>
         <Box ref={ref} sx={{ width: '100%', height: 340 }}>
           <ResponsiveContainer width="100%" height="100%">
@@ -199,16 +158,17 @@ const PerformanceTrendChart = ({ data, timeRange }) => {
               domain={[startMs, endMs]}
               ticks={tickInfo.ticks}
               interval={0}
-              tickFormatter={(v) => formatTickWithPattern(v, tickInfo.format)}
+              tickFormatter={(v) => formatTickWithPattern(v, 'HH:mm')}
               minTickGap={12}
-              tickMargin={10}
+              tickMargin={14}
+              padding={{ left: 12, right: 12 }}
             />
             <YAxis />
             <Tooltip labelFormatter={(v) => formatTickWithPattern(v, tickInfo.format)} />
             <Legend />
             <Line 
               type="monotone" 
-              dataKey="阻擋率" 
+              dataKey="防護執行率" 
               stroke="#10b981" 
               strokeWidth={3}
               dot={{ fill: '#10b981', strokeWidth: 2 }}
@@ -287,13 +247,14 @@ const ThreatDistributionChart = ({ data }) => {
 
 // 流量統計圖表組件
 const TrafficStatsChart = ({ data, timeRange }) => {
-  const { ref, width } = useContainerWidth();
+  const { ref } = useContainerWidth();
   // 使用後端提供的流量時間序列數據
   const chartData = Array.isArray(data) ? data : [];
   const startMs = timeRange?.start ? new Date(timeRange.start).getTime() : Date.now() - 6 * 60 * 60 * 1000;
   const endMs = timeRange?.end ? new Date(timeRange.end).getTime() : Date.now();
   const series = useMemo(() => buildSeriesWithTimestamps(chartData, startMs, endMs), [chartData, startMs, endMs]);
-  const tickInfo = useMemo(() => buildTicks(startMs, endMs, width), [startMs, endMs, width]);
+  // 類別軸資料：name 以 HH:mm 顯示，避免初次寬度為 0 造成時間刻度抽樣問題
+  const displaySeries = useMemo(() => series.map((it) => ({ ...it, name: formatTickWithPattern(it.timestamp, 'HH:mm') })), [series]);
 
   return (
     <Card sx={{ 
@@ -314,21 +275,11 @@ const TrafficStatsChart = ({ data, timeRange }) => {
         </Typography>
         <Box ref={ref} sx={{ width: '100%', height: 340 }}>
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={series}>
+            <AreaChart data={displaySeries}>
             <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-            <XAxis
-              type="number"
-              scale="time"
-              dataKey="timestamp"
-              domain={[startMs, endMs]}
-              ticks={tickInfo.ticks}
-              interval={0}
-              tickFormatter={(v) => formatTickWithPattern(v, tickInfo.format)}
-              minTickGap={12}
-              tickMargin={10}
-            />
+            <XAxis dataKey="name" tickMargin={12} />
             <YAxis />
-            <Tooltip labelFormatter={(v) => formatTickWithPattern(v, tickInfo.format)} />
+            <Tooltip />
             <Legend />
             <Area
               type="monotone"
@@ -601,6 +552,23 @@ const SecurityAnalysisDashboard = ({ aiConfig }) => {
 
       const analysis = await aiResponse.json();
       setAiAnalysis(analysis);
+      try {
+        const recommendations = [];
+        if (analysis?.cloudflareRecommendations) {
+          for (const rec of analysis.cloudflareRecommendations) {
+            if (typeof rec === 'string') recommendations.push(rec);
+            else if (rec?.action) recommendations.push(rec.action);
+          }
+        }
+        window.dispatchEvent(new CustomEvent('ai:analysisContext', {
+          detail: {
+            title: 'AI 防護分析建議',
+            recommendations
+          }
+        }));
+      } catch (e) {
+        // 靜默處理
+      }
       
       console.log('✅ AI 智慧防護分析完成');
       
@@ -736,16 +704,16 @@ const SecurityAnalysisDashboard = ({ aiConfig }) => {
       {securityData && (
         <>
           <Grid container spacing={3} sx={{ mb: 4 }}>
-            <Grid item xs={12} sm={6} md={3}>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
               <StatsCard
-                title="攻擊阻擋率"
-                value={`${securityData.blockingRate || 98.9}%`}
-                subtitle="攻擊阻擋成功率"
+                title="攻擊防護執行率"
+                value={`${securityData.blockingRate || 0}%`}
+                subtitle=""
                 icon={<Block sx={{ fontSize: 40, color: '#10b981' }} />}
-                trend="+0.4%"
+                trend=""
               />
             </Grid>
-            <Grid item xs={12} sm={6} md={3}>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
               <StatsCard
                 title="邊緣響應時間"
                 value={`${securityData.avgResponseTime || 7}ms`}
@@ -754,7 +722,7 @@ const SecurityAnalysisDashboard = ({ aiConfig }) => {
                 trend="-12.5%"
               />
             </Grid>
-            <Grid item xs={12} sm={6} md={3}>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
               <StatsCard
                 title="攻擊次數"
                 value={securityData.totalAttacks?.toLocaleString() || '202'}
@@ -763,7 +731,7 @@ const SecurityAnalysisDashboard = ({ aiConfig }) => {
                 trend="-13.7%"
               />
             </Grid>
-            <Grid item xs={12} sm={6} md={3}>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
               <StatsCard
                 title="保護網站"
                 value={securityData.protectedSites?.toLocaleString() || '13,200'}
@@ -777,18 +745,18 @@ const SecurityAnalysisDashboard = ({ aiConfig }) => {
           {/* 圖表區域 - 緊湊統一佈局 */}
           <Grid container spacing={4} sx={{ mb: 4 }}>
             {/* 第一排：均勻分配 */}
-            <Grid item xs={12} md={6}>
+            <Grid size={{ xs: 12, md: 6 }}>
               <SecurityBlockingChart data={securityData.attackTypeStats} timeRange={securityData.timeRange} />
             </Grid>
-            <Grid item xs={12} md={6}>
+            <Grid size={{ xs: 12, md: 6 }}>
               <PerformanceTrendChart data={securityData.performanceTrend} timeRange={securityData.timeRange} />
             </Grid>
             
             {/* 第二排：均勻分配 */}
-            <Grid item xs={12} md={6}>
+            <Grid size={{ xs: 12, md: 6 }}>
               <ThreatDistributionChart data={securityData.threatDistribution} />
             </Grid>
-            <Grid item xs={12} md={6}>
+            <Grid size={{ xs: 12, md: 6 }}>
               <TrafficStatsChart data={securityData.trafficStats.data} timeRange={securityData.timeRange} />
             </Grid>
           </Grid>
@@ -800,7 +768,7 @@ const SecurityAnalysisDashboard = ({ aiConfig }) => {
         <>
           <Grid container spacing={4} sx={{ mb: 4 }}>
             {/* Cloudflare 設定建議 */}
-            <Grid item xs={12} md={6}>
+            <Grid size={{ xs: 12, md: 6 }}>
               <Paper sx={{ 
                 p: 3, 
                 background: 'linear-gradient(135deg, #1e3a8a 0%, #312e81 100%)', 
@@ -847,7 +815,7 @@ const SecurityAnalysisDashboard = ({ aiConfig }) => {
             </Grid>
 
             {/* 行動計劃建議 */}
-            <Grid item xs={12} md={6}>
+            <Grid size={{ xs: 12, md: 6 }}>
               <Paper sx={{ 
                 p: 3, 
                 background: 'linear-gradient(135deg, #059669 0%, #047857 100%)', 

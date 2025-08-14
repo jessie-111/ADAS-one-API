@@ -179,6 +179,23 @@ function AttackTrendComparison() {
       console.log('✅ AI趨勢分析完成');
       
       setAiAnalysis(result.trendAnalysis);
+      try {
+        const recommendations = [];
+        if (result?.trendAnalysis?.cloudflareRecommendations) {
+          for (const rec of result.trendAnalysis.cloudflareRecommendations) {
+            if (typeof rec === 'string') recommendations.push(rec);
+            else if (rec?.action) recommendations.push(rec.action);
+          }
+        }
+        window.dispatchEvent(new CustomEvent('ai:analysisContext', {
+          detail: {
+            title: 'AI 趨勢分析建議',
+            recommendations
+          }
+        }));
+      } catch (e) {
+        // 靜默
+      }
       setAnalysisState({ isLoading: false, isComplete: true, error: null });
       
     } catch (error) {
