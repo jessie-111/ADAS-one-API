@@ -87,7 +87,7 @@ app.use((req, res, next) => {
 const trendAnalysisService = new TrendAnalysisService();
 
 // --- 常數設定 ---
-const LOG_FILE_PATH = '../CF-http_log.txt';
+// const LOG_FILE_PATH = '../CF-http_log.txt'; // 已移除檔案模式
 const TIME_WINDOW_SECONDS = 10;
 // 移除攻擊閾值限制，因為 Cloudflare 已經做了初步判斷
 // const ATTACK_THRESHOLD = 20;
@@ -262,6 +262,37 @@ function buildAttackRelationshipGraph(allAttacks) {
   };
 }
 
+// 動態提取目標網域
+function extractTargetDomain(attackData) {
+  // 1. 優先使用環境變數設定的目標網域
+  const envDomain = process.env.TARGET_DOMAIN;
+  if (envDomain) return envDomain;
+  
+  // 2. 從攻擊資料中提取實際攻擊目標網域
+  if (attackData?.attackDomain) {
+    return attackData.attackDomain;
+  }
+  
+  // 3. 從所有攻擊中找出最常被攻擊的基礎網域
+  if (attackData?.allAttacks && Array.isArray(attackData.allAttacks)) {
+    const domainCount = new Map();
+    attackData.allAttacks.forEach(attack => {
+      if (attack.domain) {
+        const baseDomain = attack.domain.split('.').slice(-2).join('.');
+        domainCount.set(baseDomain, (domainCount.get(baseDomain) || 0) + 1);
+      }
+    });
+    if (domainCount.size > 0) {
+      const topDomain = Array.from(domainCount.entries())
+        .sort(([,a], [,b]) => b - a)[0][0];
+      return topDomain;
+    }
+  }
+  
+  // 4. 預設值
+  return '目標基礎設施';
+}
+
 // 分類攻擊路徑類型
 function categorizeAttackPath(url) {
   if (!url) return 'Unknown';
@@ -418,7 +449,11 @@ app.post('/api/test-ai', async (req, res) => {
 
 // --- 核心邏輯函式 ---
 
-async function processLogFile(config) {
+// async function processLogFile(config) 已移除 - 系統已統一使用 ELK 即時模式
+// 原函數內容已刪除，因為檔案模式已不再使用
+
+/*
+function processLogFile_REMOVED() {
   const detectedAttacks = {};
   const globalStats = {
     totalRequests: 0,
@@ -636,6 +671,7 @@ async function processLogFile(config) {
     }
   }
 }
+*/
 
 function updateGlobalStats(logEntry, globalStats) {
   globalStats.totalRequests++;
@@ -965,7 +1001,7 @@ ${attackData.owaspFindings ? formatOWASPFindings(attackData.owaspFindings) : '�
    - **攻擊關聯圖解讀**：分析IP集群、基礎設施目標、攻擊模式分佈的關聯性
    - **協調攻擊評估**：評估是否為有組織的協調攻擊，或是散漫的機會主義攻擊  
    - **多目標攻擊分析**：分析單一攻擊者針對多個目標的戰術意圖
-   - **基礎設施威脅**：評估整個 twister5.cf 基礎設施面臨的系統性風險
+   - **基礎設施威脅**：評估整個 ${extractTargetDomain(attackData)} 基礎設施面臨的系統性風險
    - **攻擊技術組合**：分析攻擊者使用的技術組合和演進趨勢
    - **Host header 偽造**：特別分析偽造攻擊對基礎設施認知的影響
    - **威脅行為者畫像**：基於關聯分析推斷攻擊者的技術水平和目標
@@ -973,7 +1009,7 @@ ${attackData.owaspFindings ? formatOWASPFindings(attackData.owaspFindings) : '�
 
 2. 關聯式防禦策略 (recommendations)：基於攻擊關聯圖分析，提供7-9個層次化的防禦建議：
    - **IP集群防護**：針對識別出的攻擊者IP集群的阻斷策略
-   - **基礎設施加固**：針對整個 twister5.cf 基礎設施的系統性防護
+   - **基礎設施加固**：針對整個 ${extractTargetDomain(attackData)} 基礎設施的系統性防護
    - **攻擊模式對策**：針對發現的特定攻擊模式（環境檔案、配置檔案等）的防護
    - **Host偽造防護**：專門的 Host header 驗證和偽造檢測機制
    - **關聯檢測增強**：建立跨域名的攻擊關聯監控機制
@@ -2499,121 +2535,7 @@ const validateTimeRange = [
     })
 ];
 
-// 新增：攻擊來源統計API (安全版本)
-app.post('/api/attack-source-stats', validateTimeRange, async (req, res) => {
-  try {
-    // 驗證輸入
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ 
-        error: '輸入驗證失敗', 
-        details: errors.array().map(err => err.msg)
-      });
-    }
-
-    const { model, dataSource = 'file', timeRange = 'auto', startTime, endTime, apiKey: clientApiKey } = req.body;
-    
-    // 使用後端環境變數中的API Key，如果無效則回退到客戶端提供的API Key（臨時方案）
-    let apiKey = securityConfig.gemini.apiKey;
-    let usingClientKey = false;
-    
-    if (!isValidApiKey(apiKey)) {
-      console.warn('⚠️  後端API Key無效，嘗試使用客戶端提供的API Key（臨時方案）');
-      apiKey = clientApiKey;
-      usingClientKey = true;
-      
-      if (!isValidApiKey(apiKey)) {
-        console.error('❌ 沒有有效的API Key可用');
-        return res.status(400).json({ 
-          error: 'API Key設置錯誤', 
-          hint: '請設置後端環境變數GEMINI_API_KEY，或在前端AI設定中輸入API Key' 
-        });
-      }
-    }
-    
-    if (usingClientKey) {
-      console.log('🔑 使用客戶端提供的API Key（建議設置後端環境變數以提高安全性）');
-    }
-
-    console.log(`📊 開始載入攻擊來源統計 (資料來源: ${dataSource})`);
-    
-    // 驗證時間範圍
-    if (startTime && endTime) {
-      const start = new Date(startTime);
-      const end = new Date(endTime);
-      const diffHours = (end - start) / (1000 * 60 * 60);
-      
-      if (diffHours <= 0) {
-        return res.status(400).json({ error: '結束時間必須晚於開始時間' });
-      }
-      
-      if (diffHours > securityConfig.validation.maxTimeRangeHours) {
-        return res.status(400).json({ 
-          error: `時間範圍不能超過${securityConfig.validation.maxTimeRangeHours}小時` 
-        });
-      }
-      
-      console.log(`🕐 使用自定義時間範圍: ${startTime} 到 ${endTime} (${diffHours.toFixed(1)}小時)`);
-    } else {
-      console.log(`🕐 使用預設時間範圍: ${timeRange}`);
-    }
-    
-    let analysisResult;
-    
-    if (dataSource === 'elk') {
-      // 傳遞安全的配置到processELKLogs
-      analysisResult = await processELKLogs({ 
-        apiKey, 
-        model: model || securityConfig.gemini.model, 
-        timeRange, 
-        startTime, 
-        endTime 
-      });
-    } else {
-      analysisResult = await processLogFile({ 
-        apiKey, 
-        model: model || securityConfig.gemini.model 
-      });
-    }
-
-    // 提取攻擊來源統計資料
-    const attackData = analysisResult.attackData;
-    if (!attackData) {
-      return res.json({
-        topIPs: [],
-        topCountries: [],
-        topURIs: [],
-        topDomains: [],
-        httpStatusStats: [],
-      });
-    }
-
-    // 處理 HTTP 狀態碼統計
-    const globalStats = analysisResult.globalStats || {};
-    const httpStatusStats = globalStats.httpStatusCounts ? 
-      Array.from(globalStats.httpStatusCounts.entries())
-        .map(([status, count]) => ({ status, count }))
-        .sort((a, b) => b.count - a.count)
-      : [];
-
-    res.json({
-      topIPs: attackData.topIPs || [],
-      topCountries: attackData.topCountries || [],
-      topURIs: attackData.topURIs || [],
-      topDomains: attackData.allAttacks || [],
-      httpStatusStats: httpStatusStats,
-      totalRequests: attackData.totalRequests || 0,
-      uniqueIPs: attackData.uniqueIPs || 0
-    });
-
-  } catch (error) {
-    console.error('❌ 攻擊來源統計失敗:', error);
-    res.status(500).json({ 
-      error: '攻擊來源統計失敗', 
-      details: error.message 
-    });
-  }
-});
+// 攻擊來源統計API已移除 - 功能已從系統中移除
 
 // ELK 連接預熱（可選）
 async function warmupELKConnection() {

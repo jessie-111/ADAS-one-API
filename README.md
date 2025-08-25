@@ -461,7 +461,7 @@ const loadOllamaModelsIfNeeded = async (apiUrl) => {
 
 ### 錯誤症狀
 ```
-攻擊來源統計失敗: TypeError: Cannot read properties of undefined (reading 'slice')
+攻擊分析統計失敗: TypeError: Cannot read properties of undefined (reading 'slice')
    at getAIAssessment (/Users/peter/ddos-attack-graph-demo/backend/index.js:1028:47)
    at processELKLogs (/Users/peter/ddos-attack-graph-demo/backend/index.js:1295:32)
 ```
@@ -1094,7 +1094,7 @@ const loadOllamaModelsIfNeeded = async (apiUrl, savedModel = null) => {
 
 ### 用戶反映的問題
 1. **AI 回答簡短且被截斷**：AI 分析結果顯示不完整，被截斷至約 200 字元
-2. **關聯圖過於複雜**：圖形展示太多資訊，希望只顯示 Top5 IP 攻擊來源和 Top5 攻擊網址
+2. **關聯圖過於複雜**：圖形展示太多資訊，希望只顯示重點攻擊資訊
 
 ## 🔧 修復方案實施
 
@@ -1219,7 +1219,7 @@ attackPatternAnalysis: Array.from(pathTypeGroups.values())
 
 **用戶報告的問題**：
 1. **AI 回答簡短且被截斷**：AI 分析結果顯示不完整，只有約 200 字元
-2. **關聯圖過於複雜**：希望只顯示 Top5 IP 攻擊來源和 Top5 攻擊網址
+2. **關聯圖過於複雜**：希望只顯示重點攻擊資訊
 
 ## ✅ 成功修復項目
 
@@ -1385,10 +1385,10 @@ attackPatternAnalysis: Array.from(pathTypeGroups.values())
 - ✅ 固定使用 ELK 資料來源端點：`/api/analyze-elk-log`
 - ✅ 請求體中固定 `dataSource: 'elk'`
 
-#### 2. `frontend/src/DDOSTable.jsx`
-- ✅ 移除檔案模式預設值
-- ✅ 固定使用 `dataSource = 'elk'`
-- ✅ 簡化 ELK 連接檢查邏輯
+#### 2. 前端組件優化
+- ✅ 移除不必要的功能模組
+- ✅ 簡化系統架構
+- ✅ 統一使用 ELK 資料來源
 
 ### 後端修改
 
@@ -1397,9 +1397,10 @@ attackPatternAnalysis: Array.from(pathTypeGroups.values())
 - ✅ **簡化** `/api/analyze-elk-log` 端點：
   - 移除 `dataSource` 參數判斷
   - 統一使用 `processELKLogs()` 函數
-- ✅ **更新** `/api/attack-source-stats` 端點：
-  - 移除檔案模式驗證規則
+- ✅ **優化** API 端點架構：
+  - 移除不必要的API端點
   - 統一使用 ELK 資料來源
+  - 簡化系統維護
 
 #### 2. 核心邏輯
 - ✅ **保留** `processLogFile` 函數（向後相容性）

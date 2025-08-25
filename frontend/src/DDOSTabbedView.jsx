@@ -4,7 +4,6 @@ import SecurityAnalysisDashboard from './SecurityAnalysisDashboard';
 import AlertThresholdConfig from './AlertThresholdConfig';
 import AISettingsConfig from './AISettingsConfig';
 import DataSourceConfig from './DataSourceConfig';
-import DDOSTable from './DDOSTable'; // 假設這個檔案存在
 import AttackTrendComparison from './AttackTrendComparison';
 
 
@@ -82,7 +81,6 @@ const DDOSTabbedView = () => {
       <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
         <Tabs value={value} onChange={handleChange} aria-label="DDoS Attack Analysis Tabs">
           <Tab label="防護分析" />
-          <Tab label="攻擊來源" />
           <Tab label="攻擊趨勢對比" />
           <Tab label="資料來源" />
           <Tab label="警報閾值設定" />
@@ -94,18 +92,15 @@ const DDOSTabbedView = () => {
         <SecurityAnalysisDashboard aiConfig={aiConfig} />
       </TabPanel>
       <TabPanel value={value} index={1}>
-        <DDOSTable />
-      </TabPanel>
-      <TabPanel value={value} index={2}>
         <AttackTrendComparison />
       </TabPanel>
-      <TabPanel value={value} index={3}>
+      <TabPanel value={value} index={2}>
         <DataSourceConfig />
       </TabPanel>
-      <TabPanel value={value} index={4}>
+      <TabPanel value={value} index={3}>
         <AlertThresholdConfig />
       </TabPanel>
-      <TabPanel value={value} index={5}>
+      <TabPanel value={value} index={4}>
         <AISettingsConfig onConfigChange={setAiConfig} />
       </TabPanel>
     </Box>
