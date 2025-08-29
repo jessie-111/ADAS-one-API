@@ -11,6 +11,7 @@ const { elkMCPClient } = require('./services/elkMCPClient');
 const { ELK_CONFIG, OWASP_REFERENCES, identifyOWASPType } = require('./config/elkConfig');
 const { CLOUDFLARE_FIELD_MAPPING, generateAIFieldReference } = require('../cloudflare-field-mapping');
 const TrendAnalysisService = require('./services/trendAnalysisService');
+const ExportService = require('./services/exportService');
 const { SECURITY_CONFIG, validateSecurityConfig, isValidApiKey } = require('./config/security');
 const OllamaClient = require('./services/ollamaClient');
 const { AIProviderManager } = require('./services/aiProviderManager');
@@ -85,6 +86,8 @@ app.use((req, res, next) => {
 
 // 初始化趨勢分析服務
 const trendAnalysisService = new TrendAnalysisService();
+// 初始化匯出服務
+const exportService = new ExportService();
 
 // --- 常數設定 ---
 // const LOG_FILE_PATH = '../CF-http_log.txt'; // 已移除檔案模式
@@ -2747,7 +2750,8 @@ function getOptimalTimeInterval(startTime, endTime, timeSpanMs) {
   console.log(`📊 生成間隔: interval=${interval}ms (${interval/(1000*60*60)}小時), format=${format}, maxCount=${Math.min(intervalCount, 20)}`);
   console.log(`🕐 開始時間: ${startTime.toISOString()}, 結束時間: ${endTime.toISOString()}`);
   
-  for (let i = 0; i < Math.min(intervalCount, 50); i++) { // 🎯 修復：增加到50個時間點上限
+  // 🎯 修復：確保生成足夠時間段覆蓋完整查詢範圍
+  while (labels.length < Math.min(intervalCount, 50)) {
     const timeKey = Math.floor(currentTime.getTime() / interval) * interval;
     
     labels.push({
@@ -2756,12 +2760,39 @@ function getOptimalTimeInterval(startTime, endTime, timeSpanMs) {
       key: timeKey
     });
     
-    console.log(`  時間點${i+1}: ${currentTime.toISOString()} -> ${formatTimeLabel(currentTime, format)}`);
+    console.log(`  時間點${labels.length}: ${currentTime.toISOString()} -> ${formatTimeLabel(currentTime, format)}`);
     
     currentTime = new Date(currentTime.getTime() + interval);
     
-    // 🎯 修復：更寬鬆的結束條件，避免過早終止
-    if (currentTime.getTime() > endTime.getTime() + interval) break;
+    // 🎯 新修復：確保最後時間段能包含 endTime
+    // 檢查當前時間段是否已經覆蓋到 endTime
+    const currentTimeKey = Math.floor(currentTime.getTime() / interval) * interval;
+    if (currentTimeKey > endTime.getTime()) {
+      console.log(`✅ 時間段已覆蓋到查詢結束時間 ${endTime.toISOString()}`);
+      break;
+    }
+  }
+  
+  // 🎯 邊界保護：確保最後時間段能涵蓋 endTime
+  if (labels.length > 0) {
+    const lastLabel = labels[labels.length - 1];
+    const lastTimeSegmentEnd = lastLabel.key + interval;
+    
+    console.log(`🔍 邊界檢查: 最後時間段結束=${new Date(lastTimeSegmentEnd).toISOString()}, 查詢結束=${endTime.toISOString()}`);
+    
+    // 如果最後時間段無法涵蓋 endTime，添加額外時間段
+    if (endTime.getTime() >= lastTimeSegmentEnd) {
+      const additionalTime = new Date(lastTimeSegmentEnd);
+      const additionalTimeKey = Math.floor(additionalTime.getTime() / interval) * interval;
+      
+      labels.push({
+        timestamp: additionalTime,
+        label: formatTimeLabel(additionalTime, format),
+        key: additionalTimeKey
+      });
+      
+      console.log(`✅ 添加額外時間段: ${additionalTime.toISOString()} -> ${formatTimeLabel(additionalTime, format)}`);
+    }
   }
   
   // 🎯 修復：備用方案，確保至少有1個時間點
@@ -2770,7 +2801,7 @@ function getOptimalTimeInterval(startTime, endTime, timeSpanMs) {
     labels.push({
       timestamp: new Date(startTime),
       label: formatTimeLabel(new Date(startTime), format),
-      key: startTime.getTime()
+      key: Math.floor(startTime.getTime() / interval) * interval
     });
     
     // 如果時間範圍足夠，再加一個結束時間點
@@ -2778,7 +2809,7 @@ function getOptimalTimeInterval(startTime, endTime, timeSpanMs) {
       labels.push({
         timestamp: new Date(endTime),
         label: formatTimeLabel(new Date(endTime), format),
-        key: endTime.getTime()
+        key: Math.floor(endTime.getTime() / interval) * interval
       });
     }
   }
@@ -2872,7 +2903,7 @@ function generatePerformanceTrendData(logEntries, labels, interval, format) {
     
     // 計算阻擋率
     const blockedCount = requestsInPeriod.filter(entry => entry.SecurityAction === 'block').length;
-    const blockingRate = ((blockedCount / requestsInPeriod.length) * 100).toFixed(1);
+    const blockingRate = formatSmartPercentage((blockedCount / requestsInPeriod.length) * 100);
     
     // 計算平均響應時間（轉換為性能指標：響應時間越短分數越高）
     const responseTimes = requestsInPeriod
@@ -2888,7 +2919,7 @@ function generatePerformanceTrendData(logEntries, labels, interval, format) {
     
     trendData.push({
       name: labelInfo.label,
-      阻擋率: parseFloat(blockingRate),
+      阻擋率: blockingRate,
       響應時間: Math.round(responseTimeScore)
     });
   });
@@ -2931,12 +2962,20 @@ function generateTrafficTimeSeriesData(logEntries, attackEntries, labels, interv
     
     trafficData.push({
       name: labelInfo.label,
-      正常流量: Math.round(normalTraffic / 1024), // 轉換為KB
-      惡意流量: Math.round(maliciousTraffic / 1024) // 轉換為KB
+      正常流量: Math.round((normalTraffic / (1024 * 1024)) * 100) / 100, // 轉換為MB，保留2位小數
+      惡意流量: Math.round((maliciousTraffic / (1024 * 1024)) * 100) / 100 // 轉換為MB，保留2位小數
     });
   });
   
   return trafficData;
+}
+
+// 智能精度格式化函數
+function formatSmartPercentage(value) {
+  if (value >= 10) return parseFloat(value.toFixed(0));
+  if (value >= 1) return parseFloat(value.toFixed(1));  
+  if (value >= 0.1) return parseFloat(value.toFixed(2));
+  return parseFloat(value.toFixed(3));
 }
 
 // 計算防護分析統計數據
@@ -3029,7 +3068,7 @@ function calculateSecurityStats(logEntries, forcedRange) {
   stats.challengeRequestsCount = challengeRequests;
   const blockedOrChallenged = blockedRequests + challengeRequests;
   // 暫存「全量」視角的阻擋率，稍後會以「已評估」口徑覆寫 stats.blockingRate
-  const blockingRateAllTmp = stats.totalRequests > 0 ? ((blockedOrChallenged / stats.totalRequests) * 100).toFixed(1) : 0;
+  const blockingRateAllTmp = stats.totalRequests > 0 ? formatSmartPercentage((blockedOrChallenged / stats.totalRequests) * 100) : 0;
   stats.blockingRate = blockingRateAllTmp;
 
   // 計算平均響應時間
@@ -3084,7 +3123,7 @@ function calculateSecurityStats(logEntries, forcedRange) {
   
   const total = stats.totalRequests || 0;
   const denomEval = evaluatedRequests || 0;
-  const toPct = (num, den) => den > 0 ? parseFloat(((num / den) * 100).toFixed(1)) : 0;
+  const toPct = (num, den) => den > 0 ? formatSmartPercentage((num / den) * 100) : 0;
   
   stats.securityActionStats = {
     counts: { ...actionCounts, evaluatedRequests, lowScoreHits },
@@ -3132,7 +3171,7 @@ function calculateSecurityStats(logEntries, forcedRange) {
     for (const [label, count] of counts.entries()) {
       stats.threatDistribution[label] = {
         count,
-        percentage: parseFloat(((count / attackEntries.length) * 100).toFixed(1))
+        percentage: formatSmartPercentage((count / attackEntries.length) * 100)
       };
     }
   }
@@ -3193,8 +3232,23 @@ function calculateSecurityStats(logEntries, forcedRange) {
 
 // 建立防護分析AI提示詞
 function buildSecurityAnalysisPrompt(securityData) {
-  const formatAttackTypes = (attackTypes) => {
-    return Object.entries(attackTypes)
+  const formatAttackTypes = (attackTypeStats) => {
+    if (Array.isArray(attackTypeStats)) {
+      // 累計所有時間段的數據
+      const totals = {};
+      attackTypeStats.forEach(timeSlot => {
+        Object.keys(timeSlot).forEach(key => {
+          if (key !== 'name') {
+            totals[key] = (totals[key] || 0) + timeSlot[key];
+          }
+        });
+      });
+      return Object.entries(totals)
+        .map(([type, count]) => `  - ${type}: ${count} 次`)
+        .join('\n');
+    }
+    // 保持向後兼容
+    return Object.entries(attackTypeStats)
       .map(([type, count]) => `  - ${type}: ${count} 次`)
       .join('\n');
   };
@@ -3621,6 +3675,144 @@ app.post('/api/security-analysis-ai', async (req, res) => {
     res.status(500).json({ 
       error: error.message,
       details: '防護分析AI分析失敗'
+    });
+  }
+});
+
+// === 資料匯出相關API ===
+
+// 防護分析資料匯出端點
+app.post('/api/security-data-export', async (req, res) => {
+  try {
+    console.log('📤 開始防護分析資料匯出...');
+    
+    const { timeRange, startTime, endTime, options } = req.body;
+    
+    // 驗證匯出選項
+    if (!options || typeof options !== 'object') {
+      return res.status(400).json({ error: '缺少匯出選項設定' });
+    }
+
+    // 清理過期檔案
+    exportService.cleanupExpiredFiles();
+
+    // 獲取防護分析統計資料
+    console.log('📊 獲取防護分析統計資料...');
+    const securityStats = await processSecurityAnalysisData({
+      timeRange,
+      startTime,
+      endTime
+    });
+
+    // 獲取原始日誌資料 (如果需要)
+    let rawLogData = null;
+    if (options.includeRawData) {
+      console.log('📝 獲取原始日誌資料...');
+      try {
+        // 確保ELK連接狀態
+        await elkMCPClient.ensureConnection();
+        
+        let elkData;
+        if (startTime && endTime) {
+          elkData = await elkMCPClient.queryElasticsearchCustomTime(startTime, endTime);
+        } else {
+          elkData = await elkMCPClient.queryElasticsearch(timeRange || '1h');
+        }
+        
+        if (elkData && elkData.hits) {
+          rawLogData = elkData.hits.map(hit => hit.source);
+          console.log(`📊 獲取原始記錄: ${rawLogData.length} 筆`);
+        }
+      } catch (error) {
+        console.warn('⚠️ 獲取原始日誌資料失敗，將不包含原始資料:', error.message);
+      }
+    }
+
+    // 生成檔案名稱
+    const filename = exportService.generateFilename(timeRange, startTime, endTime);
+    
+    // 組裝匯出資料
+    console.log('🔧 組裝匯出資料...');
+    const exportData = exportService.buildExportData(
+      securityStats,
+      rawLogData,
+      options,
+      timeRange,
+      startTime,
+      endTime
+    );
+
+    // 設定回應標頭
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+
+    console.log(`✅ 匯出完成: ${filename}`);
+    console.log(`📊 匯出資料統計:`, {
+      totalRequests: exportData.metadata.recordCounts.totalRequests,
+      totalAttacks: exportData.metadata.recordCounts.totalAttacks,
+      rawLogEntries: exportData.metadata.recordCounts.rawLogEntries,
+      includeStats: !!exportData.statistics,
+      includeCharts: !!exportData.charts,
+      includeRawData: !!exportData.rawData
+    });
+
+    // 直接回傳JSON資料
+    res.json(exportData);
+
+  } catch (error) {
+    console.error('❌ 資料匯出失敗:', error);
+    res.status(500).json({ 
+      error: error.message || '資料匯出失敗',
+      details: '請檢查系統狀態或聯絡管理員'
+    });
+  }
+});
+
+// 獲取匯出歷史記錄
+app.get('/api/export-history', (req, res) => {
+  try {
+    const files = exportService.getExportFiles();
+    console.log(`📋 獲取匯出歷史: ${files.length} 個檔案`);
+    
+    res.json({
+      success: true,
+      files: files.slice(0, 10), // 最多回傳10個檔案
+      total: files.length
+    });
+  } catch (error) {
+    console.error('❌ 獲取匯出歷史失敗:', error);
+    res.status(500).json({ 
+      error: error.message,
+      details: '獲取匯出歷史失敗'
+    });
+  }
+});
+
+// 刪除指定匯出檔案
+app.delete('/api/delete-export/:filename', (req, res) => {
+  try {
+    const { filename } = req.params;
+    
+    // 安全檢查
+    if (!filename || filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+      return res.status(400).json({ error: '無效的檔案名稱' });
+    }
+
+    const deleted = exportService.deleteFile(filename);
+    
+    if (deleted) {
+      console.log(`🗑️ 刪除匯出檔案: ${filename}`);
+      res.json({ success: true, message: '檔案已刪除' });
+    } else {
+      res.status(404).json({ error: '檔案不存在' });
+    }
+    
+  } catch (error) {
+    console.error('❌ 刪除檔案失敗:', error);
+    res.status(500).json({ 
+      error: error.message,
+      details: '刪除檔案失敗'
     });
   }
 });

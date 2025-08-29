@@ -5,6 +5,7 @@ import AlertThresholdConfig from './AlertThresholdConfig';
 import AISettingsConfig from './AISettingsConfig';
 import DataSourceConfig from './DataSourceConfig';
 import AttackTrendComparison from './AttackTrendComparison';
+import DataExportDashboard from './DataExportDashboard';
 
 
 const TabPanel = (props) => {
@@ -85,6 +86,7 @@ const DDOSTabbedView = () => {
           <Tab label="資料來源" />
           <Tab label="警報閾值設定" />
           <Tab label="AI分析設定" />
+          <Tab label="資料匯出" />
         </Tabs>
       </Box>
       
@@ -102,6 +104,9 @@ const DDOSTabbedView = () => {
       </TabPanel>
       <TabPanel value={value} index={4}>
         <AISettingsConfig onConfigChange={setAiConfig} />
+      </TabPanel>
+      <TabPanel value={value} index={5}>
+        <DataExportDashboard aiConfig={aiConfig} />
       </TabPanel>
     </Box>
   );

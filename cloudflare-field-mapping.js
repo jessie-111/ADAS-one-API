@@ -366,6 +366,15 @@ const CLOUDFLARE_FIELD_MAPPING = {
     description: "用戶端TCP來回時間的平滑平均值",
     ai_context: "用於分析網路品質和可能的網路層攻擊",
     example: "2, 1, 5"
+  },
+
+  //SecurityRuleDescription
+  security_rule_descriptions: {
+    elk_field: "SecurityRuleDescriptions",
+    data_type: "keyword",
+    description: "Cloudflare受管理規則集描述(參考網址https://developers.cloudflare.com/changelog/rss/waf.xml)",
+    ai_context: "用於識別攻擊的類型和漏洞相關的描述",
+    example: "[\"Version Control - Information Disclosure\", \"Apache Struts - Remote Code Execution - CVE:CVE-2023-50164: ['$', ']', '(']",
   }
 };
 

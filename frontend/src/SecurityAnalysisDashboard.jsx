@@ -37,6 +37,14 @@ import {
 import useContainerWidth from './hooks/useContainerWidth';
 import { buildTicks, buildSeriesWithTimestamps, formatTickWithPattern } from './utils/timeAxis';
 
+// 智能精度格式化函數（與後端保持一致）
+const formatSmartPercentage = (value) => {
+  if (value >= 10) return `${value.toFixed(0)}%`;
+  if (value >= 1) return `${value.toFixed(1)}%`;  
+  if (value >= 0.1) return `${value.toFixed(2)}%`;
+  return `${value.toFixed(3)}%`;
+};
+
 // === 時間軸輔助：生成連續時間序列與整點刻度（6小時測試重點，但不硬編碼具體時間） ===
 // 移除未使用的輔助函式（已以 utils/timeAxis 統一處理）
 
@@ -70,13 +78,10 @@ const StatsCard = ({ title, value, subtitle, icon, trend, color = "primary" }) =
 // 攻擊統計數量（堆疊累計）圖表組件
 const SecurityBlockingChart = ({ data, timeRange }) => {
   const { ref } = useContainerWidth();
-  // 使用後端提供的動態時間序列數據
+  // 使用後端提供的動態時間序列數據，後端已經包含正確的 name 欄位
   const chartData = useMemo(() => (Array.isArray(data) ? data : []), [data]);
-  const startMs = timeRange?.start ? new Date(timeRange.start).getTime() : Date.now() - 6 * 60 * 60 * 1000;
-  const endMs = timeRange?.end ? new Date(timeRange.end).getTime() : Date.now();
-  const series = useMemo(() => buildSeriesWithTimestamps(chartData, startMs, endMs), [chartData, startMs, endMs]);
-  // 類別軸資料（與示範累積圖一致）：name 以 HH:mm 顯示
-  const displaySeries = useMemo(() => series.map((it) => ({ ...it, name: formatTickWithPattern(it.timestamp, 'HH:mm') })), [series]);
+  
+  console.log('🔍 SecurityBlockingChart 接收到的資料:', chartData);
 
   return (
     <Card sx={{ 
@@ -98,7 +103,7 @@ const SecurityBlockingChart = ({ data, timeRange }) => {
         <Box ref={ref} sx={{ width: '100%', height: 340 }}>
           <ResponsiveContainer width="100%" height="100%">
             <BarChart 
-              data={displaySeries}
+              data={chartData}
               margin={{ top: 8, right: 16, bottom: 32, left: 8 }}
               barCategoryGap="20%"
               barGap="5%"
@@ -123,12 +128,10 @@ const SecurityBlockingChart = ({ data, timeRange }) => {
 // 性能優化趨勢圖表組件  
 const PerformanceTrendChart = ({ data, timeRange }) => {
   const { ref, width } = useContainerWidth();
-  // 使用後端提供的性能趨勢數據
+  // 使用後端提供的性能趨勢數據，後端已經包含正確的 name 和資料欄位
   const chartData = (data && data.blockingRate && data.blockingRate.data) ? data.blockingRate.data : [];
-  const startMs = timeRange?.start ? new Date(timeRange.start).getTime() : Date.now() - 6 * 60 * 60 * 1000;
-  const endMs = timeRange?.end ? new Date(timeRange.end).getTime() : Date.now();
-  const series = useMemo(() => buildSeriesWithTimestamps(chartData, startMs, endMs), [chartData, startMs, endMs]);
-  const tickInfo = useMemo(() => buildTicks(startMs, endMs, width), [startMs, endMs, width]);
+  
+  console.log('🔍 PerformanceTrendChart 接收到的資料:', chartData);
 
   return (
     <Card sx={{ 
@@ -145,30 +148,31 @@ const PerformanceTrendChart = ({ data, timeRange }) => {
           性能優化趨勢
         </Typography>
         <Typography variant="body2" sx={{ color: '#94a3b8', mb: 2 }}>
-          響應時間與防護執行率趨勢
+          阻擋率 (%) 與響應時間性能分數 (0-100分) 趨勢
         </Typography>
         <Box ref={ref} sx={{ width: '100%', height: 340 }}>
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={series}>
+            <LineChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-            <XAxis
-              type="number"
-              scale="time"
-              dataKey="timestamp"
-              domain={[startMs, endMs]}
-              ticks={tickInfo.ticks}
-              interval={0}
-              tickFormatter={(v) => formatTickWithPattern(v, 'HH:mm')}
-              minTickGap={12}
-              tickMargin={14}
-              padding={{ left: 12, right: 12 }}
+            <XAxis dataKey="name" tick={{ fill: '#b5b8c6' }} tickMargin={12} />
+            <YAxis 
+              tick={{ fill: '#b5b8c6' }}
+              tickFormatter={(value) => formatSmartPercentage(value)}
             />
-            <YAxis />
-            <Tooltip labelFormatter={(v) => formatTickWithPattern(v, tickInfo.format)} />
+            <Tooltip 
+              formatter={(value, name) => {
+                if (name === '阻擋率') {
+                  return [formatSmartPercentage(value), '阻擋率'];
+                } else if (name === '響應時間') {
+                  return [`${value}分`, '響應時間性能分數'];
+                }
+                return [value, name];
+              }}
+            />
             <Legend />
             <Line 
               type="monotone" 
-              dataKey="防護執行率" 
+              dataKey="阻擋率" 
               stroke="#10b981" 
               strokeWidth={3}
               dot={{ fill: '#10b981', strokeWidth: 2 }}
@@ -228,7 +232,7 @@ const ThreatDistributionChart = ({ data }) => {
               cx="50%"
               cy="50%"
               labelLine={false}
-              label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+              label={({ name, percent }) => `${name}: ${formatSmartPercentage(percent * 100)}`}
               outerRadius={90}
               fill="#8884d8"
               dataKey="value"
@@ -248,13 +252,10 @@ const ThreatDistributionChart = ({ data }) => {
 // 流量統計圖表組件
 const TrafficStatsChart = ({ data, timeRange }) => {
   const { ref } = useContainerWidth();
-  // 使用後端提供的流量時間序列數據
+  // 使用後端提供的流量時間序列數據，後端已經包含正確的 name 欄位
   const chartData = Array.isArray(data) ? data : [];
-  const startMs = timeRange?.start ? new Date(timeRange.start).getTime() : Date.now() - 6 * 60 * 60 * 1000;
-  const endMs = timeRange?.end ? new Date(timeRange.end).getTime() : Date.now();
-  const series = useMemo(() => buildSeriesWithTimestamps(chartData, startMs, endMs), [chartData, startMs, endMs]);
-  // 類別軸資料：name 以 HH:mm 顯示，避免初次寬度為 0 造成時間刻度抽樣問題
-  const displaySeries = useMemo(() => series.map((it) => ({ ...it, name: formatTickWithPattern(it.timestamp, 'HH:mm') })), [series]);
+  
+  console.log('🔍 TrafficStatsChart 接收到的資料:', chartData);
 
   return (
     <Card sx={{ 
@@ -271,15 +272,15 @@ const TrafficStatsChart = ({ data, timeRange }) => {
           流量處理統計
         </Typography>
         <Typography variant="body2" sx={{ color: '#94a3b8', mb: 2 }}>
-          正常流量與惡意流量處理情況
+          正常流量與惡意流量處理情況 (MB)
         </Typography>
         <Box ref={ref} sx={{ width: '100%', height: 340 }}>
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={displaySeries}>
+            <AreaChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
             <XAxis dataKey="name" tickMargin={12} />
             <YAxis />
-            <Tooltip />
+            <Tooltip formatter={(value) => [`${value} MB`, '']} />
             <Legend />
             <Area
               type="monotone"
@@ -719,7 +720,6 @@ const SecurityAnalysisDashboard = ({ aiConfig }) => {
                 value={`${securityData.avgResponseTime || 7}ms`}
                 subtitle="平均邊緣響應時間"
                 icon={<Speed sx={{ fontSize: 40, color: '#3b82f6' }} />}
-                trend="-12.5%"
               />
             </Grid>
             <Grid size={{ xs: 12, sm: 6, md: 3 }}>
@@ -728,7 +728,6 @@ const SecurityAnalysisDashboard = ({ aiConfig }) => {
                 value={securityData.totalAttacks?.toLocaleString() || '202'}
                 subtitle="檢測攻擊次數"
                 icon={<Security sx={{ fontSize: 40, color: '#ef4444' }} />}
-                trend="-13.7%"
               />
             </Grid>
             <Grid size={{ xs: 12, sm: 6, md: 3 }}>
@@ -737,7 +736,6 @@ const SecurityAnalysisDashboard = ({ aiConfig }) => {
                 value={securityData.protectedSites?.toLocaleString() || '13,200'}
                 subtitle="保護正常訪問網址數量"
                 icon={<Public sx={{ fontSize: 40, color: '#8b5cf6' }} />}
-                trend="+5.6%"
               />
             </Grid>
           </Grid>
