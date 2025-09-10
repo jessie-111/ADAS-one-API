@@ -1,4 +1,6 @@
 # 🛡️ Security Products (含 WAF)
+| logs-http-requests.md | Logs HTTP Requests 數據集 | 175 | 5.5 KB |
+| logs-overview.md | Cloudflare Logs 完整系統 | 291 | 9.3 KB |
 
 > 安全產品線 - 全方位網路安全防護
 
