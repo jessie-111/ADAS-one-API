@@ -3558,50 +3558,7 @@ app.post('/api/security-analysis-ai', async (req, res) => {
     let analysis;
     const aiProviderManager = new AIProviderManager();
     
-    if (provider === 'gemini') {
-      if (!apiKey) {
-        throw new Error('請提供 Gemini API Key');
-      }
-      
-      const aiClient = aiProviderManager.getProvider('gemini', {
-        apiKey: apiKey,
-        model: model || 'gemini-2.0-flash-exp'
-      });
-      
-      const result = await aiClient.generateContent(prompt);
-      // ✅ 修正：aiProviderManager返回的是{text, model, responseTime}格式
-      if (!result || !result.text) {
-        throw new Error('AI 回應格式異常：缺少 text 屬性');
-      }
-      const text = result.text;
-      
-      // 優先使用自然語言分段解析（方案C）
-      analysis = parseAnalysisFromMarkedText(text);
-      
-      // 若分段解析失敗，嘗試 JSON（兼容歷史提示）
-      if (!analysis) {
-        try {
-          const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
-          if (jsonMatch) {
-            analysis = JSON.parse(jsonMatch[1]);
-            console.log('✅ 從markdown代碼塊成功解析JSON');
-          } else {
-            analysis = JSON.parse(text);
-            console.log('✅ 直接解析JSON成功');
-          }
-        } catch (e) {
-          // 最終回退：以全文為摘要
-          console.info('ℹ️ 使用自然語言摘要回退');
-          analysis = {
-            summary: text.trim() || '分析完成。',
-            chartAnalysis: {},
-            cloudflareRecommendations: [],
-            nextSteps: {}
-          };
-        }
-      }
-      
-    } else if (provider === 'ollama') {
+    if (provider === 'ollama') {
       if (!model) {
         throw new Error('請提供 Ollama 模型名稱');
       }
