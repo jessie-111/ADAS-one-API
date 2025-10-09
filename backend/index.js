@@ -3023,7 +3023,7 @@ function calculateSecurityStats(logEntries, forcedRange) {
   const classifiedAttackEntries = [];
   const ruleDescCount = new Map();
 
-  for (const entry of logEntries) {
+  for (const entry of logEntries) { //建立「攻擊事件清單」與規則描述排行
     const actionsArr = Array.isArray(entry.SecurityActions) ? entry.SecurityActions : [];
     const isActionBlockedOrChallenged = (
       entry.SecurityAction === 'block' ||
@@ -3059,7 +3059,7 @@ function calculateSecurityStats(logEntries, forcedRange) {
   }
 
   const attackEntries = classifiedAttackEntries;
-  stats.totalAttacks = attackEntries.length;
+  stats.totalAttacks = attackEntries.length; //計算攻擊總數攻擊判定邏輯
 
   // 計算阻擋率
   const blockedRequests = logEntries.filter(entry => entry.SecurityAction === 'block').length;
@@ -3088,7 +3088,7 @@ function calculateSecurityStats(logEntries, forcedRange) {
   let evaluatedRequests = 0;
   let lowScoreHits = 0;
   
-  for (const entry of logEntries) {
+  for (const entry of logEntries) { //建立「安全動作統計」與「已評估口徑」
     const actionRaw = (entry.SecurityAction || '').toString().toLowerCase();
     let action = 'unknown';
     if (actionRaw === 'block') action = 'block';
