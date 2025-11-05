@@ -31,14 +31,32 @@
 }
 ```
 
-## **錯誤碼（Errors）**
+## **錯誤回應範例（Example ERROR Response Message）**
 
-| Code | Message |
-|------|----------|
-| 400 | 無效的檔案名稱 |
-| 404 | 檔案不存在 |
-| 500 | 刪除檔案失敗 |
 
+**HTTP 400 - 無效的檔案名稱**
+```json
+{
+  "error": "無效的檔案名稱",
+  "statusCode": 400
+}
+```
+
+**HTTP 404 - 檔案不存在**
+```json
+{
+  "error": "檔案不存在",
+  "statusCode": 404
+}
+```
+
+**HTTP 500 - 刪除檔案失敗**
+```json
+{
+  "error": "刪除檔案失敗",
+  "statusCode": 500
+}
+```
 ---
 
 ## **附註（Notes）**
