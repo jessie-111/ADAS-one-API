@@ -1,19 +1,10 @@
 # 匯出安全分析資料
 
-## **功能說明**
-
-此 API 用於將安全分析資料匯出為檔案。支援匯出統計資料、圖表資料及原始日誌，產生 JSON 格式的檔案供下載，便於資料備份與離線分析。
-
-**基礎 URL**: `http://localhost:8080/api`  
-**狀態**: 生產環境
+## POST: /api/security-data-export
+- 將安全分析資料匯出為檔案API
+- 支援匯出統計資料、圖表資料及原始日誌，產生 JSON 格式的檔案供下載，便於資料備份與離線分析。
 
 ---
-
-## **Resource 資源**
-
-| Project | Method | URL |
-|----------|---------|-----|
-| WEB | POST | `/api/security-data-export` |
 
 ## **請求參數（Request Parameters）**
 
