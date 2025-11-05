@@ -1,17 +1,8 @@
 # 獲取 Gemini 模型列表
-
-## **功能說明**
-
-此 API 用於獲取可用的 Gemini AI 模型列表。回傳所有支援的 Gemini 模型 ID 及其顯示名稱，供前端選擇使用。
-
-
+## GET: /api/models
+- 獲取可用的 Gemini AI 模型列表API
+- 用於獲取可用的 Gemini AI 模型列表。回傳所有支援的 Gemini 模型 ID 及其顯示名稱，供前端選擇使用。
 ---
-
-## **Resource 資源**
-
-| Project | Method | URL |
-|----------|---------|-----|
-| WEB | GET | `/api/models` |
 
 ## **請求參數（Request Parameters）**
 
