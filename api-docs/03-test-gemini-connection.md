@@ -43,12 +43,24 @@
 }
 ```
 
-## **錯誤碼（Errors）**
+## **錯誤回應範例（Example ERROR Response Message）**
 
-| Code | Message |
-|------|----------|
-| 400 | 缺少 API Key |
-| 500 | AI 測試失敗 |
+
+**HTTP 400 - 缺少 API Key**
+```json
+{
+  "error": "缺少 API Key",
+  "statusCode": 400
+}
+```
+
+**HTTP 500 - AI 測試失敗**
+```json
+{
+  "error": "AI 測試失敗",
+  "statusCode": 500
+}
+```
 
 ---
 
