@@ -1,21 +1,10 @@
-# API 文件規格說明
+# AI 趨勢分析
 
-## **簡介（Introduction）**
-
-此文件說明 ADAS-one-Demo 後端服務的 API 設計與使用規範。本系統提供 DDoS 攻擊分析、安全監控、AI 驅動的安全評估等功能。
-
-**基礎 URL**: `http://localhost:8080/api`  
-**狀態**: 生產環境
+## POST: /api/analyze-attack-trends
+- 透過 AI 分析攻擊趨勢變化API
+- 比較當前與歷史時期的資料，由 AI 生成趨勢分析報告、識別攻擊模式變化並提供對應的安全建議。
 
 ---
-
-# 12. AI 趨勢分析
-
-## **Resource 資源**
-
-| Project | Method | URL |
-|----------|---------|-----|
-| WEB | POST | `/api/analyze-attack-trends` |
 
 ## **請求參數（Request Parameters）**
 
