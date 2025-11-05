@@ -1,19 +1,10 @@
 # 防護分析統計
 
-## **功能說明**
-
-此 API 用於獲取指定時間範圍內的防護分析統計資料。支援自訂時間範圍或使用預設範圍，回傳總請求數、阻擋數、挑戰數、攻擊數等安全統計指標。
-
-**基礎 URL**: `http://localhost:8080/api`  
-**狀態**: 生產環境
+## POST: /api/security-analysis-stats
+- 獲取指定時間範圍內的防護分析統計資料API
+- 支援自訂時間範圍或使用預設範圍，回傳總請求數、阻擋數、挑戰數、攻擊數等安全統計指標。
 
 ---
-
-## **Resource 資源**
-
-| Project | Method | URL |
-|----------|---------|-----|
-| WEB | POST | `/api/security-analysis-stats` |
 
 ## **請求參數（Request Parameters）**
 
