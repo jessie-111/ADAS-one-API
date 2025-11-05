@@ -1,19 +1,9 @@
 # 測試 Ollama AI 連接
-
-## **功能說明**
-
-此 API 用於測試本地 Ollama AI 服務的連接狀態。驗證指定的 Ollama API URL 是否可正常連接，確保服務可用性。
-
-**基礎 URL**: `http://localhost:8080/api`  
-**狀態**: 生產環境
-
+## POST: /api/test-ai/ollama
+- 測試本地 Ollama AI 服務的連接狀態API
+- 驗證指定的 Ollama API URL 是否可正常連接，確保服務可用性。
+  
 ---
-
-## **Resource 資源**
-
-| Project | Method | URL |
-|----------|---------|-----|
-| WEB | POST | `/api/test-ai/ollama` |
 
 ## **請求參數（Request Parameters）**
 
