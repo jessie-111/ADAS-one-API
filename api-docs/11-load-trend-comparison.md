@@ -1,19 +1,10 @@
 # 載入趨勢對比資料
 
-## **功能說明**
-
-此 API 用於載入並對比不同時期的流量趨勢資料。將當前時期與上一時期的請求量、流量等資料進行對比分析，產生趨勢圖表與變化統計。
-
-**基礎 URL**: `http://localhost:8080/api`  
-**狀態**: 生產環境
+## POST: /api/load-trend-comparison
+- 載入並對比不同時期的流量趨勢資料API
+- 將當前時期與上一時期的請求量、流量等資料進行對比分析，產生趨勢圖表與變化統計。
 
 ---
-
-## **Resource 資源**
-
-| Project | Method | URL |
-|----------|---------|-----|
-| WEB | POST | `/api/load-trend-comparison` |
 
 ## **請求參數（Request Parameters）**
 
