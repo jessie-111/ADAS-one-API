@@ -1,19 +1,11 @@
 # 除錯：時間分組測試
 
-## **功能說明**
-
-此 API 為開發除錯用途，用於測試時間分組功能的正確性。驗證系統在處理時間資料時的分組邏輯是否正常運作。
-
-**基礎 URL**: `http://localhost:8080/api`  
-**狀態**: 生產環境
+## GET: /api/debug/time-grouping
+- 測試時間分組功能的正確性API
+- 驗證系統在處理時間資料時的分組邏輯是否正常運作。
 
 ---
 
-## **Resource 資源**
-
-| Project | Method | URL |
-|----------|---------|-----|
-| WEB | GET | `/api/debug/time-grouping` |
 
 ## **請求參數（Request Parameters）**
 
