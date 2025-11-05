@@ -1,59 +1,51 @@
-# API 文件規格說明
+# 刪除匯出檔案
 
-## **簡介（Introduction）**
+## **功能說明**
 
-此文件說明 ADAS-one-Demo 後端服務的 API 設計與使用規範。本系統提供 DDoS 攻擊分析、安全監控、AI 驅動的安全評估等功能。
+此 API 用於刪除已匯出的安全分析資料檔案。透過指定檔案名稱，從系統中移除不再需要的匯出檔案，管理儲存空間。
 
 **基礎 URL**: `http://localhost:8080/api`  
 **狀態**: 生產環境
 
 ---
 
-# 16. 獲取匯出歷史
-
 ## **Resource 資源**
 
 | Project | Method | URL |
 |----------|---------|-----|
-| WEB | GET | `/api/export-history` |
+| WEB | DELETE | `/api/delete-export/:filename` |
 
 ## **請求參數（Request Parameters）**
 
-**Type**：無
+**Type**：路徑參數
 
-此 API 不需要請求參數。
+| Attribute | Type | Required | Description |
+|------------|------|-----------|--------------|
+| :filename | string | Y | 檔案名稱 |
 
 ## **回應欄位（Response Fields）**
 
 | Attribute | Type | Required | Description |
 |------------|------|-----------|--------------|
 | success | bool | Y | 是否成功 |
-| files | list(object) | Y | 檔案列表（最多 10 筆） |
-| total | int | Y | 總檔案數 |
-
-### **files 物件內容**
-
-| Attribute | Type | Required | Description |
-|------------|------|-----------|--------------|
-| filename | string | Y | 檔案名稱 |
-| size | int | Y | 檔案大小（bytes） |
-| date | string | Y | 建立日期 |
+| message | string | Y | 回應訊息 |
 
 ## **回應範例（Example Response）**
 
 ```json
 {
   "success": true,
-  "files": [
-    {
-      "filename": "security_export_2024-01-01.json",
-      "size": 12345,
-      "date": "2024-01-01T12:00:00Z"
-    }
-  ],
-  "total": 10
+  "message": "檔案已刪除"
 }
 ```
+
+## **錯誤碼（Errors）**
+
+| Code | Message |
+|------|----------|
+| 400 | 無效的檔案名稱 |
+| 404 | 檔案不存在 |
+| 500 | 刪除檔案失敗 |
 
 ---
 
