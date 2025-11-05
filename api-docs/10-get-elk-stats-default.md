@@ -1,19 +1,11 @@
 # 獲取 ELK 統計資料（預設）
 
-## **功能說明**
+## GET: /api/elk/stats
+- 獲取 ELK 統計資料（預設最近 1 小時）API
+- 不需要請求參數，自動查詢最近 1 小時的安全統計資料，回應格式與 API 9 相同。
 
-此 API 用於獲取 ELK 統計資料（預設最近 1 小時）。不需要請求參數，自動查詢最近 1 小時的安全統計資料，回應格式與 API 9 相同。
-
-**基礎 URL**: `http://localhost:8080/api`  
-**狀態**: 生產環境
 
 ---
-
-## **Resource 資源**
-
-| Project | Method | URL |
-|----------|---------|-----|
-| WEB | GET | `/api/elk/stats` |
 
 ## **請求參數（Request Parameters）**
 
