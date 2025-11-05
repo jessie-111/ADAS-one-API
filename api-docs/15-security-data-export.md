@@ -94,12 +94,24 @@
 }
 ```
 
-## **錯誤碼（Errors）**
+## **錯誤回應範例（Example ERROR Response Message）**
 
-| Code | Message |
-|------|----------|
-| 400 | 缺少匯出選項設定 |
-| 500 | 資料匯出失敗 |
+
+**HTTP 400 - 缺少匯出選項設定**
+```json
+{
+  "error": "缺少匯出選項設定",
+  "statusCode": 400
+}
+```
+
+**HTTP 500 - 資料匯出失敗**
+```json
+{
+  "error": "資料匯出失敗",
+  "statusCode": 500
+}
+```
 
 ---
 
