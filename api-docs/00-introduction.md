@@ -4,9 +4,6 @@
 
 此文件說明 ADAS-one-Demo 後端服務的 API 設計與使用規範。本系統提供 DDoS 攻擊分析、安全監控、AI 驅動的安全評估等功能。
 
-**基礎 URL**: `http://localhost:8080/api`  
-**狀態**: 生產環境
-
 ---
 
 ## **需求（Requirements）**
