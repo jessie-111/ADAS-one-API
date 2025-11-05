@@ -14,6 +14,15 @@
 | apiKey | string | Y | Gemini API Key |
 | model | string | N | 模型名稱，預設為 `gemini-1.5-flash` |
 
+## **請求範例（Example Request）**
+
+```json
+{
+  "apiKey": "YOUR_GEMINI_API_KEY",
+  "model": "gemini-2.5-flash"
+}
+```
+
 ## **回應欄位（Response Fields）**
 
 | Attribute | Type | Required | Description |
