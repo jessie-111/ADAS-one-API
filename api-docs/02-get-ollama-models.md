@@ -1,20 +1,9 @@
 # 獲取 Ollama 模型列表
-
-## **功能說明**
-
-此 API 用於獲取本地 Ollama 服務中可用的 AI 模型列表。可選擇性指定 Ollama API URL，並回傳模型清單及總數量。
-
-**基礎 URL**: `http://localhost:8080/api`  
-**狀態**: 生產環境
+## POST: /api/ollama/models
+- 獲取本地 Ollama 服務中可用的 AI 模型列表API
+- 可選擇性指定 Ollama API URL，並回傳模型清單及總數量。
 
 ---
-
-## **Resource 資源**
-
-| Project | Method | URL |
-|----------|---------|-----|
-| WEB | POST | `/api/ollama/models` |
-
 ## **請求參數（Request Parameters）**
 
 **Type**：`json`
