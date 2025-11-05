@@ -27,11 +27,16 @@
 }
 ```
 
-## **錯誤碼（Errors）**
+## **錯誤回應範例（Example ERROR Response Message）**
 
-| Code | Message |
-|------|----------|
-| 500 | ELK MCP 連接失敗 |
+
+**HTTP 500 - ELK MCP 連接失敗**
+```json
+{
+  "error": "ELK MCP 連接失敗",
+  "statusCode": 500
+}
+```
 
 ---
 
