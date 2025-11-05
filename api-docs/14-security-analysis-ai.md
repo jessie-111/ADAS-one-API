@@ -97,12 +97,24 @@
 }
 ```
 
-## **錯誤碼（Errors）**
+## **錯誤回應範例（Example ERROR Response Message）**
 
-| Code | Message |
-|------|----------|
-| 400 | 請提供 Ollama 模型名稱 |
-| 500 | 防護分析 AI 分析失敗 |
+
+**HTTP 400 - 請提供 Ollama 模型名稱**
+```json
+{
+  "error": "請提供 Ollama 模型名稱",
+  "statusCode": 400
+}
+```
+
+**HTTP 500 - 防護分析 AI 分析失敗**
+```json
+{
+  "error": "防護分析 AI 分析失敗",
+  "statusCode": 500
+}
+```
 
 ---
 
