@@ -1,19 +1,9 @@
 # 測試 Gemini AI 連接
-
-## **功能說明**
-
-此 API 用於測試 Gemini AI 服務的連接狀態。透過提供 API Key 與模型名稱，驗證是否能成功與 Gemini AI 服務溝通並取得回應。
-
-**基礎 URL**: `http://localhost:8080/api`  
-**狀態**: 生產環境
-
+## POST: /api/test-ai
+- 測試 Gemini AI 服務的連接狀態API
+- 透過提供API Key與模型名稱，驗證是否能成功與 Gemini AI 服務溝通並取得回應。
+  
 ---
-
-## **Resource 資源**
-
-| Project | Method | URL |
-|----------|---------|-----|
-| WEB | POST | `/api/test-ai` |
 
 ## **請求參數（Request Parameters）**
 
