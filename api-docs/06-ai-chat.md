@@ -20,6 +20,22 @@
 | requestDocSuggestions | bool | N | 是否請求文件建議 |
 | requestPlanScaffold | bool | N | 是否請求計劃架構 |
 
+## **請求範例（Example Request）**
+
+```json
+{
+  "message": "如何設定 WAF 規則以防止 SQL 注入攻擊？",
+  "provider": "gemini",
+  "apiKey": "YOUR_GEMINI_API_KEY",
+  "model": "gemini-2.5-flash",
+  "context": {
+    "attackType": "SQL Injection",
+    "severity": "high"
+  },
+  "requestDocSuggestions": true
+}
+```
+
 ## **回應欄位（Response Fields）**
 
 | Attribute | Type | Required | Description |
