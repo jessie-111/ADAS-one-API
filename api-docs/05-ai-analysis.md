@@ -19,6 +19,23 @@
 | overallData | object | N | 整體分析資料 |
 | fieldReference | string | N | 欄位參考資訊 |
 
+## **請求範例（Example Request）**
+
+```json
+{
+  "provider": "gemini",
+  "apiKey": "YOUR_GEMINI_API_KEY",
+  "model": "gemini-2.5-flash",
+  "attackData": {
+    "attackDomain": "example.com",
+    "totalAttacks": 15
+  },
+  "overallData": {
+    "totalRequests": 1000
+  }
+}
+```
+
 ## **回應欄位（Response Fields）**
 
 | Attribute | Type | Required | Description |
