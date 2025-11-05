@@ -22,6 +22,32 @@
 | clientOffsetMinutes | int | N | 客戶端時區偏移（分鐘） |
 | clientTz | string | N | 客戶端時區名稱 |
 
+## **請求範例（Example Request）**
+
+使用時間範圍：
+```json
+{
+  "provider": "ollama",
+  "model": "llama2",
+  "apiUrl": "http://localhost:11434",
+  "timeRange": "24h",
+  "clientTz": "Asia/Taipei"
+}
+```
+
+使用自訂時間：
+```json
+{
+  "provider": "ollama",
+  "model": "llama2",
+  "apiUrl": "http://localhost:11434",
+  "startTime": "2024-01-01T00:00:00Z",
+  "endTime": "2024-01-01T23:59:59Z",
+  "clientOffsetMinutes": 480,
+  "clientTz": "Asia/Taipei"
+}
+```
+
 ## **回應欄位（Response Fields）**
 
 | Attribute | Type | Required | Description |
