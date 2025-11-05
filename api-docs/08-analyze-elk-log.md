@@ -1,20 +1,10 @@
 # 分析 ELK 日誌
 
-## **功能說明**
-
-此 API 用於透過 AI 分析 ELK 系統中的日誌資料。根據指定的時間範圍，從 ELK 取得日誌並進行 AI 驅動的分析，產生攻擊摘要與整體統計資訊。
-
-**基礎 URL**: `http://localhost:8080/api`  
-**狀態**: 生產環境
+## POST: /api/analyze-elk-log
+-  分析 ELK 系統中的日誌資料API
+- 根據指定的時間範圍，從 ELK 取得日誌並進行 AI 驅動的分析，產生攻擊摘要與整體統計資訊。
 
 ---
-
-## **Resource 資源**
-
-| Project | Method | URL |
-|----------|---------|-----|
-| WEB | POST | `/api/analyze-elk-log` |
-
 ## **請求參數（Request Parameters）**
 
 **Type**：`json`
