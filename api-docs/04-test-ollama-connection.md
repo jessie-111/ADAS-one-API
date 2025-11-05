@@ -13,6 +13,14 @@
 |------------|------|-----------|--------------|
 | apiUrl | string | N | Ollama API URL，預設為 `http://localhost:11434` |
 
+## **請求範例（Example Request）**
+
+```json
+{
+  "apiUrl": "http://localhost:11434"
+}
+```
+
 ## **回應欄位（Response Fields）**
 
 | Attribute | Type | Required | Description |
