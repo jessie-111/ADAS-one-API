@@ -1,15 +1,13 @@
-# API 文件規格說明
+# AI 分析
 
-## **簡介（Introduction）**
+## **功能說明**
 
-此文件說明 ADAS-one-Demo 後端服務的 API 設計與使用規範。本系統提供 DDoS 攻擊分析、安全監控、AI 驅動的安全評估等功能。
+此 API 用於透過 AI（Gemini 或 Ollama）對攻擊資料進行智能分析。提供攻擊數據與整體分析資料，由 AI 生成安全摘要、風險評估及建議措施。
 
 **基礎 URL**: `http://localhost:8080/api`  
 **狀態**: 生產環境
 
 ---
-
-# 5. AI 分析
 
 ## **Resource 資源**
 
