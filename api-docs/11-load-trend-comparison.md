@@ -14,6 +14,14 @@
 |------------|------|-----------|--------------|
 | timeRange | string | Y | 時間範圍，如 `24h`、`7d` |
 
+## **請求範例（Example Request）**
+
+```json
+{
+  "timeRange": "24h"
+}
+```
+
 ## **回應欄位（Response Fields）**
 
 | Attribute | Type | Required | Description |
