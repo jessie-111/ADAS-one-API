@@ -1,19 +1,10 @@
 # 防護分析 AI 評估
 
-## **功能說明**
-
-此 API 用於透過 AI 對防護資料進行深度評估。基於指定時間範圍的安全統計資料，由 AI 分析威脅分布、攻擊類型，並提供 Cloudflare 配置建議與後續措施。
-
-**基礎 URL**: `http://localhost:8080/api`  
-**狀態**: 生產環境
+## POST: /api/security-analysis-ai
+- AI 對防護資料進行深度評估API
+- 基於指定時間範圍的安全統計資料，由 AI 分析威脅分布、攻擊類型，並提供 Cloudflare 配置建議與後續措施。
 
 ---
-
-## **Resource 資源**
-
-| Project | Method | URL |
-|----------|---------|-----|
-| WEB | POST | `/api/security-analysis-ai` |
 
 ## **請求參數（Request Parameters）**
 
