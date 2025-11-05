@@ -4,8 +4,6 @@
 
 此 API 用於獲取可用的 Gemini AI 模型列表。回傳所有支援的 Gemini 模型 ID 及其顯示名稱，供前端選擇使用。
 
-**基礎 URL**: `http://localhost:8080/api`  
-**狀態**: 生產環境
 
 ---
 
