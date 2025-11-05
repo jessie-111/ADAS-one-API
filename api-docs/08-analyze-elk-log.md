@@ -17,6 +17,17 @@
 | apiUrl | string | N | Ollama API URL（當 provider 為 ollama 時必填） |
 | timeRange | string | N | 時間範圍，預設為 `1h`，支援 `1h`、`6h`、`24h`、`7d` |
 
+## **請求範例（Example Request）**
+
+```json
+{
+  "provider": "gemini",
+  "apiKey": "YOUR_GEMINI_API_KEY",
+  "model": "gemini-2.5-flash",
+  "timeRange": "24h"
+}
+```
+
 ## **回應欄位（Response Fields）**
 
 | Attribute | Type | Required | Description |
