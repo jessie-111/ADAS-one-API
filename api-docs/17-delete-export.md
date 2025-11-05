@@ -1,19 +1,11 @@
 # 刪除匯出檔案
 
-## **功能說明**
+## DELETE: /api/delete-export/:filename
+- 刪除已匯出的安全分析資料檔案API
+- 透過指定檔案名稱，從系統中移除不再需要的匯出檔案，管理儲存空間。
 
-此 API 用於刪除已匯出的安全分析資料檔案。透過指定檔案名稱，從系統中移除不再需要的匯出檔案，管理儲存空間。
-
-**基礎 URL**: `http://localhost:8080/api`  
-**狀態**: 生產環境
 
 ---
-
-## **Resource 資源**
-
-| Project | Method | URL |
-|----------|---------|-----|
-| WEB | DELETE | `/api/delete-export/:filename` |
 
 ## **請求參數（Request Parameters）**
 
