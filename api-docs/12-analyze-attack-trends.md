@@ -1,7 +1,7 @@
 # AI 趨勢分析
 
 ## POST: /api/analyze-attack-trends
-- 透過 AI 分析攻擊趨勢變化API
+- AI 分析攻擊趨勢變化API
 - 比較當前與歷史時期的資料，由 AI 生成趨勢分析報告、識別攻擊模式變化並提供對應的安全建議。
 
 ---
