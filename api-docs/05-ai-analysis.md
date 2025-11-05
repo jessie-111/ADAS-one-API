@@ -1,19 +1,9 @@
 # AI 分析
-
-## **功能說明**
-
-此 API 用於透過 AI（Gemini 或 Ollama）對攻擊資料進行智能分析。提供攻擊數據與整體分析資料，由 AI 生成安全摘要、風險評估及建議措施。
-
-**基礎 URL**: `http://localhost:8080/api`  
-**狀態**: 生產環境
+## POST: /api/analyze
+- 透過 AI（Gemini 或 Ollama）對攻擊資料進行智能分析API
+- 提供攻擊數據與整體分析資料，由 AI 生成安全摘要、風險評估及建議措施。
 
 ---
-
-## **Resource 資源**
-
-| Project | Method | URL |
-|----------|---------|-----|
-| WEB | POST | `/api/analyze` |
 
 ## **請求參數（Request Parameters）**
 
