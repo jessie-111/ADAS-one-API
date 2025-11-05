@@ -1,15 +1,13 @@
-# API 文件規格說明
+# 測試 Ollama AI 連接
 
-## **簡介（Introduction）**
+## **功能說明**
 
-此文件說明 ADAS-one-Demo 後端服務的 API 設計與使用規範。本系統提供 DDoS 攻擊分析、安全監控、AI 驅動的安全評估等功能。
+此 API 用於測試本地 Ollama AI 服務的連接狀態。驗證指定的 Ollama API URL 是否可正常連接，確保服務可用性。
 
 **基礎 URL**: `http://localhost:8080/api`  
 **狀態**: 生產環境
 
 ---
-
-# 4. 測試 Ollama AI 連接
 
 ## **Resource 資源**
 
