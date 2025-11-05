@@ -1,19 +1,9 @@
 # 測試 ELK 連接
-
-## **功能說明**
-
-此 API 用於測試 ELK（Elasticsearch、Logstash、Kibana）MCP 服務的連接狀態。驗證系統是否能正常連接到 ELK 日誌分析服務。
-
-**基礎 URL**: `http://localhost:8080/api`  
-**狀態**: 生產環境
+## GET: /api/elk/test-connection
+-  測試 ELK（Elasticsearch、Logstash、Kibana）MCP 服務的連接狀態API
+- 驗證系統是否能正常連接到 ELK 日誌分析服務。
 
 ---
-
-## **Resource 資源**
-
-| Project | Method | URL |
-|----------|---------|-----|
-| WEB | GET | `/api/elk/test-connection` |
 
 ## **請求參數（Request Parameters）**
 
