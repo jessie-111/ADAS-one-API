@@ -19,6 +19,29 @@
 | clientOffsetMinutes | int | N | 客戶端時區偏移（分鐘） |
 | clientTz | string | N | 客戶端時區名稱，如 `Asia/Taipei` |
 
+## **請求範例（Example Request）**
+
+使用時間範圍：
+```json
+{
+  "timeRange": "24h",
+  "dataSource": "elk",
+  "clientTz": "Asia/Taipei"
+}
+```
+
+使用自訂時間：
+```json
+{
+  "startTime": "2024-01-01T00:00:00Z",
+  "endTime": "2024-01-01T23:59:59Z",
+  "dataSource": "elk",
+  "clientOffsetMinutes": 480,
+  "clientTz": "Asia/Taipei"
+}
+```
+
+
 ### **注意事項**
 - `startTime` 和 `endTime` 必須同時提供，且需在同一時區
 - 若提供 `timeRange`，則不需提供 `startTime` 和 `endTime`
