@@ -1,15 +1,13 @@
-# API 文件規格說明
+# 測試 ELK 連接
 
-## **簡介（Introduction）**
+## **功能說明**
 
-此文件說明 ADAS-one-Demo 後端服務的 API 設計與使用規範。本系統提供 DDoS 攻擊分析、安全監控、AI 驅動的安全評估等功能。
+此 API 用於測試 ELK（Elasticsearch、Logstash、Kibana）MCP 服務的連接狀態。驗證系統是否能正常連接到 ELK 日誌分析服務。
 
 **基礎 URL**: `http://localhost:8080/api`  
 **狀態**: 生產環境
 
 ---
-
-# 7. 測試 ELK 連接
 
 ## **Resource 資源**
 
