@@ -1,19 +1,11 @@
 # 獲取 ELK 統計資料（帶時間範圍）
 
-## **功能說明**
+## GET: /api/elk/stats/:timeRange
+- 獲取指定時間範圍內的 ELK 統計資料API
+- 根據路徑參數指定的時間範圍（如 1h、6h、24h、7d），回傳安全動作統計、熱門國家與 IP、WAF 分數等資訊。
 
-此 API 用於獲取指定時間範圍內的 ELK 統計資料。根據路徑參數指定的時間範圍（如 1h、6h、24h、7d），回傳安全動作統計、熱門國家與 IP、WAF 分數等資訊。
-
-**基礎 URL**: `http://localhost:8080/api`  
-**狀態**: 生產環境
 
 ---
-
-## **Resource 資源**
-
-| Project | Method | URL |
-|----------|---------|-----|
-| WEB | GET | `/api/elk/stats/:timeRange` |
 
 ## **請求參數（Request Parameters）**
 
