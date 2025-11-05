@@ -79,12 +79,24 @@
 }
 ```
 
-## **錯誤碼（Errors）**
+## **錯誤回應範例（Example ERROR Response Message）**
 
-| Code | Message |
-|------|----------|
-| 400 | 輸入驗證失敗 |
-| 400 | 目前僅支援 ELK 資料來源 |
+
+**HTTP 400 - 輸入驗證失敗**
+```json
+{
+  "error": "輸入驗證失敗",
+  "statusCode": 400
+}
+```
+
+**HTTP 400 - 目前僅支援 ELK 資料來源**
+```json
+{
+  "error": "目前僅支援 ELK 資料來源",
+  "statusCode": 400
+}
+```
 
 ---
 
