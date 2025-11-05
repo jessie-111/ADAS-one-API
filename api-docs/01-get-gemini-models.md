@@ -1,15 +1,13 @@
-# API 文件規格說明
+# 獲取 Gemini 模型列表
 
-## **簡介（Introduction）**
+## **功能說明**
 
-此文件說明 ADAS-one-Demo 後端服務的 API 設計與使用規範。本系統提供 DDoS 攻擊分析、安全監控、AI 驅動的安全評估等功能。
+此 API 用於獲取可用的 Gemini AI 模型列表。回傳所有支援的 Gemini 模型 ID 及其顯示名稱，供前端選擇使用。
 
 **基礎 URL**: `http://localhost:8080/api`  
 **狀態**: 生產環境
 
 ---
-
-# 1. 獲取 Gemini 模型列表
 
 ## **Resource 資源**
 
