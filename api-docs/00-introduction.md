@@ -65,7 +65,7 @@
 
 ## **版本紀錄（Changelog）**
 
-- 由 **Auto (AI Assistant)** 編寫，更新於 **2025 年 10 月**
+- 由 **Jessie** 編寫，更新於 **2025 年 11 月**
 - 文件版本：v1.0
 - 平台：GitHub (jessie-111/ADAS-one-Demo)
 
