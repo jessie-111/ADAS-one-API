@@ -17,6 +17,31 @@
 | endTime | string | N | 結束時間（ISO 8601 格式） |
 | options | object | Y | 匯出選項 |
 
+## **請求範例（Example Request）**
+
+使用時間範圍（不含原始資料）：
+```json
+{
+  "timeRange": "24h",
+  "options": {
+    "includeRawData": false,
+    "format": "json"
+  }
+}
+```
+
+使用自訂時間（包含原始資料）：
+```json
+{
+  "startTime": "2024-01-01T00:00:00Z",
+  "endTime": "2024-01-01T23:59:59Z",
+  "options": {
+    "includeRawData": true,
+    "format": "json"
+  }
+}
+```
+
 ### **options 物件內容**
 
 | Attribute | Type | Required | Description |
