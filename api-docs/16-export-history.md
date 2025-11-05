@@ -1,8 +1,8 @@
-# 刪除匯出檔案
+# 獲取匯出歷史
 
 ## **功能說明**
 
-此 API 用於刪除已匯出的安全分析資料檔案。透過指定檔案名稱，從系統中移除不再需要的匯出檔案，管理儲存空間。
+此 API 用於查詢已匯出的安全分析資料檔案列表。回傳最近匯出的檔案清單（最多 10 筆），包含檔名、檔案大小及建立日期等資訊。
 
 **基礎 URL**: `http://localhost:8080/api`  
 **狀態**: 生產環境
@@ -13,39 +13,45 @@
 
 | Project | Method | URL |
 |----------|---------|-----|
-| WEB | DELETE | `/api/delete-export/:filename` |
+| WEB | GET | `/api/export-history` |
 
 ## **請求參數（Request Parameters）**
 
-**Type**：路徑參數
+**Type**：無
 
-| Attribute | Type | Required | Description |
-|------------|------|-----------|--------------|
-| :filename | string | Y | 檔案名稱 |
+此 API 不需要請求參數。
 
 ## **回應欄位（Response Fields）**
 
 | Attribute | Type | Required | Description |
 |------------|------|-----------|--------------|
 | success | bool | Y | 是否成功 |
-| message | string | Y | 回應訊息 |
+| files | list(object) | Y | 檔案列表（最多 10 筆） |
+| total | int | Y | 總檔案數 |
+
+### **files 物件內容**
+
+| Attribute | Type | Required | Description |
+|------------|------|-----------|--------------|
+| filename | string | Y | 檔案名稱 |
+| size | int | Y | 檔案大小（bytes） |
+| date | string | Y | 建立日期 |
 
 ## **回應範例（Example Response）**
 
 ```json
 {
   "success": true,
-  "message": "檔案已刪除"
+  "files": [
+    {
+      "filename": "security_export_2024-01-01.json",
+      "size": 12345,
+      "date": "2024-01-01T12:00:00Z"
+    }
+  ],
+  "total": 10
 }
 ```
-
-## **錯誤碼（Errors）**
-
-| Code | Message |
-|------|----------|
-| 400 | 無效的檔案名稱 |
-| 404 | 檔案不存在 |
-| 500 | 刪除檔案失敗 |
 
 ---
 
