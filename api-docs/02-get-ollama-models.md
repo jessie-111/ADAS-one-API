@@ -1,15 +1,13 @@
-# API 文件規格說明
+# 獲取 Ollama 模型列表
 
-## **簡介（Introduction）**
+## **功能說明**
 
-此文件說明 ADAS-one-Demo 後端服務的 API 設計與使用規範。本系統提供 DDoS 攻擊分析、安全監控、AI 驅動的安全評估等功能。
+此 API 用於獲取本地 Ollama 服務中可用的 AI 模型列表。可選擇性指定 Ollama API URL，並回傳模型清單及總數量。
 
 **基礎 URL**: `http://localhost:8080/api`  
 **狀態**: 生產環境
 
 ---
-
-# 2. 獲取 Ollama 模型列表
 
 ## **Resource 資源**
 
