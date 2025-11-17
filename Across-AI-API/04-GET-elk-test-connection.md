@@ -14,28 +14,13 @@
 此 API 不需要請求參數。
 
 ---
-
 ## **回應欄位（Response Fields）**
-
-### 成功回應
 
 | Attribute | Type    | Required | Description          |
 |-----------|---------|----------|----------------------|
 | connected | boolean | Y        | 是否連接成功         |
 | message   | string  | Y        | 連接狀態訊息         |
-
-### 錯誤回應
-
-| Attribute | Type    | Required | Description      |
-|-----------|---------|----------|------------------|
-| connected | boolean | Y        | 連接狀態（false）|
-| error     | string  | Y        | 錯誤訊息         |
-
----
-
 ## **回應範例（Example Response）**
-
-### 成功回應
 
 ```json
 {
@@ -44,8 +29,14 @@
 }
 ```
 
-### 失敗回應
+## **錯誤回應範例（Example ERROR Response Message）**
 
+| Attribute | Type    | Required | Description      |
+|-----------|---------|----------|------------------|
+| connected | boolean | Y        | 連接狀態（false）|
+| error     | string  | Y        | 錯誤訊息         |
+
+## **回應欄位（Response Fields）**
 ```json
 {
   "connected": false,
