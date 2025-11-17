@@ -35,9 +35,7 @@ GET /api/elk/stats/24h
 ```
 
 ---
-
 ## **回應欄位（Response Fields）**
-
 | Attribute         | Type   | Required | Description          |
 |-------------------|--------|----------|----------------------|
 | totalEvents       | number | Y        | 總事件數             |
@@ -47,8 +45,6 @@ GET /api/elk/stats/24h
 | topCountries      | array  | Y        | 主要來源國家         |
 | topURIs           | array  | Y        | 最常被攻擊的 URI     |
 | timeRange         | string | Y        | 查詢的時間範圍       |
-
----
 
 ## **回應範例（Example Response）**
 
@@ -93,7 +89,7 @@ GET /api/elk/stats/24h
 }
 ```
 
-### 失敗回應
+## **錯誤回應範例（Example ERROR Response Message）**
 
 ```json
 {
