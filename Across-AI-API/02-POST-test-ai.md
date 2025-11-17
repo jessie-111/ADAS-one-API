@@ -50,13 +50,6 @@
 
 ## **錯誤回應範例（Example ERROR Response Message）**
 
-
-| Attribute | Type   | Required | Description    |
-|-----------|--------|----------|----------------|
-| error     | string | Y        | 錯誤訊息       |
-| details   | string | Y        | 錯誤詳細資訊   |
-
-## **回應欄位（Response Fields）**
 ```json
 {
   "error": "AI 測試失敗",
