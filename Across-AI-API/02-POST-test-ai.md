@@ -28,10 +28,7 @@
 ```
 
 ---
-
 ## **回應欄位（Response Fields）**
-
-### 成功回應
 
 | Attribute | Type    | Required | Description          |
 |-----------|---------|----------|----------------------|
@@ -40,18 +37,7 @@
 | model     | string  | Y        | 使用的模型名稱       |
 | response  | string  | Y        | AI 的回應內容        |
 
-### 錯誤回應
-
-| Attribute | Type   | Required | Description    |
-|-----------|--------|----------|----------------|
-| error     | string | Y        | 錯誤訊息       |
-| details   | string | Y        | 錯誤詳細資訊   |
-
----
-
 ## **回應範例（Example Response）**
-
-### 成功回應
 
 ```json
 {
@@ -62,8 +48,15 @@
 }
 ```
 
-### 失敗回應
+## **錯誤回應範例（Example ERROR Response Message）**
 
+
+| Attribute | Type   | Required | Description    |
+|-----------|--------|----------|----------------|
+| error     | string | Y        | 錯誤訊息       |
+| details   | string | Y        | 錯誤詳細資訊   |
+
+## **回應欄位（Response Fields）**
 ```json
 {
   "error": "AI 測試失敗",
