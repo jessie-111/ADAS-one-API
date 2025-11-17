@@ -61,11 +61,7 @@
 ```
 
 ---
-
 ## **回應欄位（Response Fields）**
-
-### 成功回應
-
 | Attribute | Type    | Required | Description              |
 |-----------|---------|----------|--------------------------|
 | success   | boolean | Y        | 分析是否成功             |
@@ -93,20 +89,7 @@
 | timeRange          | string | Y        | 分析時間範圍         |
 | analysisTimestamp  | string | Y        | 分析時間戳（ISO）    |
 
-### 錯誤回應
-
-| Attribute | Type    | Required | Description      |
-|-----------|---------|----------|------------------|
-| success   | boolean | Y        | false            |
-| error     | string  | Y        | 錯誤訊息         |
-| details   | string  | Y        | 錯誤詳細資訊     |
-
----
-
 ## **回應範例（Example Response）**
-
-### 成功回應
-
 ```json
 {
   "success": true,
@@ -192,6 +175,8 @@
   "details": "請先設定 Gemini API Key 或使用 Ollama"
 }
 ```
+
+
 
 ---
 
