@@ -78,7 +78,8 @@ GET /api/elk/stats
 }
 ```
 
-### 失敗回應
+## **錯誤回應範例（Example ERROR Response Message）**
+
 
 ```json
 {
