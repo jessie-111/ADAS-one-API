@@ -68,8 +68,6 @@
 
 ## **回應範例（Example Response）**
 
-### 成功回應
-
 ```json
 {
   "summary": "檢測到針對管理介面的暴力破解攻擊，來自單一 IP 地址的高頻率請求，建議立即採取防護措施。",
@@ -89,7 +87,7 @@
 }
 ```
 
-### 失敗回應
+## **錯誤回應範例（Example ERROR Response Message）**
 
 ```json
 {
